@@ -1,0 +1,12 @@
+.venv
+uv.lock
+.env
+
+.claude
+
+.pytest_cache
+pytest.ini
+
+__pycache__
+
+*.db*
