@@ -130,7 +130,8 @@ def create_post(
     session: Session,
     user_id: int,
     content: str,
-    parent_post_id: Optional[int] = None
+    parent_post_id: Optional[int] = None,
+    title: Optional[str] = None
 ) -> Post:
     """
     Create a new post or comment.
@@ -159,7 +160,8 @@ def create_post(
     post = Post(
         user_id=user_id,
         content=content,
-        parent_post_id=parent_post_id
+        parent_post_id=parent_post_id,
+        title=title
     )
     
     session.add(post)
@@ -170,6 +172,12 @@ def get_post_by_id(session: Session, post_id: int) -> Optional[Post]:
     """Get post by ID, excluding soft-deleted posts."""
     return session.query(Post).filter(
         and_(Post.id == post_id, Post.deleted_at.is_(None))
+    ).first()
+
+def get_post_by_title(session: Session, title: str) -> Optional[Post]:
+    """Get post by title, excluding soft-deleted posts."""
+    return session.query(Post).filter(
+        and_(Post.title == title, Post.deleted_at.is_(None))
     ).first()
 
 def get_posts_by_user(

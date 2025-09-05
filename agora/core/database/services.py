@@ -38,7 +38,6 @@ def create_user_account(
             "data": None
         }
 
-
 def get_user_profile(session: Session, username: str) -> Optional[dict]:
     """Get user profile with computed stats."""
     user = ops.get_user_by_username(session, username)
@@ -60,7 +59,6 @@ def get_user_profile(session: Session, username: str) -> Optional[dict]:
         "following_count": len(following),
         "post_count": len(posts)
     }
-
 
 def get_user_stats(session: Session, username: str) -> Optional[dict]:
     """Get detailed user statistics."""
@@ -91,7 +89,6 @@ def get_user_stats(session: Session, username: str) -> Optional[dict]:
         "join_date": user.created_at.isoformat()
     }
 
-
 # ============================================================================
 # CONTENT SERVICES
 # ============================================================================
@@ -99,7 +96,8 @@ def get_user_stats(session: Session, username: str) -> Optional[dict]:
 def create_user_post(
     session: Session,
     username: str,
-    content: str
+    content: str,
+    title: Optional[str] = None
 ) -> dict:
     """Create a new post for a user."""
     try:
@@ -111,7 +109,7 @@ def create_user_post(
                 "data": None
             }
         
-        post = ops.create_post(session, user.id, content)
+        post = ops.create_post(session, user.id, content, title=title)
         post_data = _format_post_data(session, post)
         
         return {
@@ -125,7 +123,6 @@ def create_user_post(
             "message": f"Failed to create post: {str(e)}",
             "data": None
         }
-
 
 def create_comment(
     session: Session,
@@ -163,7 +160,6 @@ def create_comment(
             "message": f"Failed to create comment: {str(e)}",
             "data": None
         }
-
 
 def get_user_feed(
     session: Session,
@@ -206,7 +202,6 @@ def get_user_feed(
     
     return feed_items
 
-
 def get_post_details(session: Session, post_id: int) -> Optional[dict]:
     """Get detailed information about a specific post."""
     post = ops.get_post_by_id(session, post_id)
@@ -215,6 +210,13 @@ def get_post_details(session: Session, post_id: int) -> Optional[dict]:
     
     return _format_post_data(session, post)
 
+def get_post_by_title(session: Session, title: str) -> Optional[dict]:
+    """Get detailed information about a specific post by title."""
+    post = ops.get_post_by_title(session, title)
+    if not post:
+        return None
+    
+    return _format_post_data(session, post)
 
 def get_trending_posts(session: Session, limit: int = 10) -> List[dict]:
     """Get trending posts."""
@@ -252,7 +254,6 @@ def get_trending_posts(session: Session, limit: int = 10) -> List[dict]:
         trending_posts.append(post_data)
     
     return trending_posts
-
 
 # ============================================================================
 # SOCIAL SERVICES
@@ -306,7 +307,6 @@ def follow_user(
             "data": None
         }
 
-
 def unfollow_user(
     session: Session,
     follower_username: str,
@@ -346,7 +346,6 @@ def unfollow_user(
             "data": None
         }
 
-
 def like_post(
     session: Session,
     username: str,
@@ -385,7 +384,6 @@ def like_post(
             "data": None
         }
 
-
 def unlike_post(
     session: Session,
     username: str,
@@ -423,7 +421,6 @@ def unlike_post(
             "data": None
         }
 
-
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
@@ -441,6 +438,7 @@ def _format_post_data(session: Session, post) -> dict:
     
     return {
         "id": post.id,
+        "title": post.title,
         "author_username": author.username if author else "unknown",
         "author_display_name": author.display_name if author else None,
         "content": post.content,
@@ -450,7 +448,6 @@ def _format_post_data(session: Session, post) -> dict:
         "comment_count": len(comments),
         "reaction_counts": reaction_counts
     }
-
 
 if __name__ == "__main__":
     # Quick test of services

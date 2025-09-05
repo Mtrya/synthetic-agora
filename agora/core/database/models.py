@@ -59,6 +59,7 @@ class Post(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
     parent_post_id = Column(Integer, ForeignKey('posts.id'), nullable=True, index=True)
+    title = Column(String(200), nullable=True, index=True)
     content = Column(Text, nullable=False)
 
     # Timestamps
