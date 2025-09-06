@@ -18,18 +18,19 @@ from . import operations as _ops
 def create_user_account(
     session: Session,
     username: str,
-    display_name: Optional[str] = None,
     bio: Optional[str] = None
 ) -> dict:
     """Create a new user account."""
     try:
-        user = _ops.create_user(session, username, display_name, bio)
-        profile = get_user_profile(session, username)
+        user = _ops.create_user(session, username, bio)
+        
+        # For new user creation, use username as both agent and target
+        profile_result = get_user_profile(session, username, username)
         
         return {
             "success": True,
             "message": f"User @{username} created successfully",
-            "data": profile
+            "data": profile_result["data"] if profile_result["success"] else None
         }
     except _ops.DuplicateError as e:
         return {
@@ -38,55 +39,141 @@ def create_user_account(
             "data": None
         }
 
-def get_user_profile(session: Session, username: str) -> Optional[dict]:
-    """Get user profile with computed stats."""
-    user = _ops.get_user_by_username(session, username)
-    if not user:
-        return None
+def get_user_profile(session: Session, agent_username: str, target_username: str) -> dict:
+    """Get comprehensive user profile with stats and top posts."""
+    # Get target user
+    target_user = _ops.get_user_by_username(session, target_username)
+    if not target_user:
+        return {
+            "success": False,
+            "message": f"User @{target_username} not found",
+            "data": None
+        }
     
-    # Get computed stats
-    posts = _ops.get_posts_by_user(session, user.id, limit=1000, include_comments=False)
-    followers = _ops.get_followers(session, user.id)
-    following = _ops.get_following(session, user.id)
+    # Get basic stats
+    posts = _ops.get_posts_by_user(session, target_user.id, limit=1000, include_comments=False)
+    followers = _ops.get_followers(session, target_user.id)
+    following = _ops.get_following(session, target_user.id)
+    
+    # Calculate likes received and given
+    likes_received = 0
+    for post in posts:
+        reaction_counts = _ops.get_reaction_counts(session, post.id)
+        likes_received += reaction_counts.get("like", 0)
+    
+    # Get likes given by user
+    agent_user = _ops.get_user_by_username(session, agent_username)
+    likes_given = 0
+    if agent_user:
+        user_reactions = _ops.get_user_reactions(session, agent_user.id)
+        likes_given = sum(1 for r in user_reactions if r.reaction_type == "like")
+    
+    # Get top 4 most liked posts (excluding comments)
+    posts_with_likes = []
+    for post in posts:
+        reaction_counts = _ops.get_reaction_counts(session, post.id)
+        like_count = reaction_counts.get("like", 0)
+        if like_count > 0 and post.title:  # Only include posts with titles and likes
+            posts_with_likes.append((post.title, like_count))
+    
+    # Sort by like count and take top 4
+    posts_with_likes.sort(key=lambda x: x[1], reverse=True)
+    top_liked_posts = [title for title, _ in posts_with_likes[:4]]
     
     return {
-        "id": user.id,
-        "username": user.username,
-        "display_name": user.display_name,
-        "bio": user.bio,
-        "created_at": user.created_at.isoformat(),
-        "follower_count": len(followers),
-        "following_count": len(following),
-        "post_count": len(posts)
+        "success": True,
+        "message": f"Retrieved profile for @{target_username}",
+        "data": {
+            "agent_username": agent_username,
+            "target_username": target_username,
+            "bio": target_user.bio or "",
+            "follower_count": len(followers),
+            "following_count": len(following),
+            "post_count": len(posts),
+            "likes_received": likes_received,
+            "likes_given": likes_given,
+            "top_liked_posts": top_liked_posts
+        }
     }
 
-def get_user_stats(session: Session, username: str) -> Optional[dict]:
-    """Get detailed user statistics."""
-    user = _ops.get_user_by_username(session, username)
-    if not user:
-        return None
+def get_user_relationship(session: Session, agent_username: str, target_username: str) -> dict:
+    """Get detailed relationship information between users."""
+    # Get both users
+    agent_user = _ops.get_user_by_username(session, agent_username)
+    target_user = _ops.get_user_by_username(session, target_username)
     
-    all_posts = _ops.get_posts_by_user(session, user.id, limit=10000, include_comments=True)
-    posts_only = [p for p in all_posts if not p.is_comment]
-    comments_only = [p for p in all_posts if p.is_comment]
+    if not target_user:
+        return {
+            "success": False,
+            "message": f"User @{target_username} not found",
+            "data": None
+        }
     
-    followers = _ops.get_followers(session, user.id)
-    following = _ops.get_following(session, user.id)
+    if not agent_user:
+        return {
+            "success": False,
+            "message": f"Agent user @{agent_username} not found",
+            "data": None
+        }
     
-    # Calculate total likes received across all posts
-    total_likes = 0
-    for post in posts_only:
-        reaction_counts = _ops.get_reaction_counts(session, post.id)
-        total_likes += reaction_counts.get("like", 0)
+    # Get relationship data
+    followers = _ops.get_followers(session, target_user.id)
+    following = _ops.get_following(session, target_user.id)
+    
+    # Get friends (mutual follows)
+    friends = []
+    for follower in followers:
+        if _ops.get_relationship(session, follower.id, target_user.id, "friend"):
+            friends.append(follower.username)
+    
+    # Get agent's friends for mutual friend calculation
+    agent_followers = _ops.get_followers(session, agent_user.id)
+    agent_friends = []
+    for follower in agent_followers:
+        if _ops.get_relationship(session, follower.id, agent_user.id, "friend"):
+            agent_friends.append(follower.username)
+    
+    # Find mutual friends
+    mutual_friends = list(set(friends) & set(agent_friends))
     
     return {
-        "username": username,
-        "total_posts": len(posts_only),
-        "total_comments": len(comments_only),
-        "total_followers": len(followers),
-        "total_following": len(following),
-        "total_likes_received": total_likes,
-        "join_date": user.created_at.isoformat()
+        "success": True,
+        "message": f"Retrieved relationship data for @{target_username}",
+        "data": {
+            "agent_username": agent_username,
+            "target_username": target_username,
+            "followers": [f.username for f in followers],
+            "following": [f.username for f in following],
+            "friends": friends,
+            "mutual_friends": mutual_friends
+        }
+    }
+
+def get_user_posts(session: Session, agent_username: str, target_username: str) -> dict:
+    """Get recent posts from a user (excluding comments)."""
+    # Get target user
+    target_user = _ops.get_user_by_username(session, target_username)
+    if not target_user:
+        return {
+            "success": False,
+            "message": f"User @{target_username} not found",
+            "data": None
+        }
+    
+    # Get posts (excluding comments)
+    posts = _ops.get_posts_by_user(session, target_user.id, limit=100, include_comments=False)
+    
+    # Extract titles, filtering out posts without titles
+    post_titles = [post.title for post in posts if post.title]
+    
+    return {
+        "success": True,
+        "message": f"Retrieved {len(post_titles)} posts from @{target_username}",
+        "data": {
+            "agent_username": agent_username,
+            "target_username": target_username,
+            "post_titles": post_titles
+        }
     }
 
 # ============================================================================
@@ -224,7 +311,7 @@ def get_trending_posts(session: Session, limit: int = 10) -> List[dict]:
     ).group_by(Post.id).order_by(desc('like_count')).limit(limit)
     
     trending_posts = []
-    for post, like_count in trending_query.all():
+    for post, _ in trending_query.all():
         post_data = _format_post_data(session, post)
         trending_posts.append(post_data)
     
@@ -415,7 +502,6 @@ def _format_post_data(session: Session, post) -> dict:
         "id": post.id,
         "title": post.title,
         "author_username": author.username if author else "unknown",
-        "author_display_name": author.display_name if author else None,
         "content": post.content,
         "created_at": post.created_at.isoformat(),
         "is_comment": post.is_comment,

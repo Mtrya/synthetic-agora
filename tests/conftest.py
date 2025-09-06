@@ -37,8 +37,8 @@ def sample_users(temp_db):
     """Create sample users for testing."""
     with temp_db.get_session() as session:
         # Create test users
-        services.create_user_account(session, "alice", "Alice Smith", "AI researcher")
-        services.create_user_account(session, "bob", "Bob Johnson", "Developer")
-        services.create_user_account(session, "charlie", "Charlie Brown", "Designer")
+        services.create_user_account(session, "alice", "AI researcher")
+        services.create_user_account(session, "bob", "Developer")
+        services.create_user_account(session, "charlie", "Designer")
     
     return ["alice", "bob", "charlie"]

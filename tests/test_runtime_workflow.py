@@ -29,7 +29,6 @@ def main():
         result = services.create_user_account(
             session, 
             "alice", 
-            "Alice Smith", 
             "AI researcher exploring social dynamics"
         )
         print(f"Result: {result['message']}")
@@ -39,7 +38,6 @@ def main():
         result = services.create_user_account(
             session, 
             "bob", 
-            "Bob Johnson", 
             "Social media enthusiast"
         )
         print(f"Created user Bob: {result['message']}")
@@ -121,17 +119,18 @@ def main():
             }
         }
     
+    # Update the custom tool to include the formatter directly
+    custom_tool.response_formatter = format_user_stats_response
     executor.register_custom_tool(custom_tool)
-    executor.tool_registry._response_formatters["format_user_stats_response"] = format_user_stats_response
     
     print("✅ Custom tool registered")
     
     # Example 8: Use custom tool
     print("\n📈 Example 8: Using custom tool...")
-    result = executor.execute_tool_call("alice", {
+    result = executor.execute_tool_calls(["alice"], [{
         "tool": "get_user_stats",
         "parameters": {"username": "alice"}
-    })
+    }])[0]
     print(f"Result: {result['message']}")
     if result['success']:
         stats = result['data']['stats']

@@ -27,9 +27,10 @@ class AgentToolExecutor:
 
     def __init__(self, db_manager: DatabaseManager, tool_registry: Optional[ToolRegistry]=None):
         self.db_manager = db_manager
-        self.action_tracker = ActionTracker()
         self.tool_registry = tool_registry if tool_registry else ToolRegistry()
         self._service_cache = self._build_service_cache()
+        # Shared executor with per-agent action trackers
+        self._agent_trackers: Dict[str, ActionTracker] = {}
     
     def _build_service_cache(self) -> Dict[str, Any]:
         """
@@ -55,6 +56,20 @@ class AgentToolExecutor:
                 service_cache[service_name] = None
         
         return service_cache
+    
+    def _get_agent_tracker(self, agent_username: str) -> ActionTracker:
+        """
+        Get or create ActionTracker for a specific agent.
+        
+        Args:
+            agent_username: The agent's username
+            
+        Returns:
+            ActionTracker instance for the agent
+        """
+        if agent_username not in self._agent_trackers:
+            self._agent_trackers[agent_username] = ActionTracker()
+        return self._agent_trackers[agent_username]
     
     def execute_tool_call(self, agent_username: str, tool_call: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -105,10 +120,11 @@ class AgentToolExecutor:
             db_result = self._execute_platform_service(tool_def.service, service_args)
             
             # Step 4: Format response
-            formatted_response = self.tool_registry.format_response(tool_name, db_result)
+            formatted_response = tool_def.response_formatter(db_result)
             
             # Step 5: Record action for future context
-            self.action_tracker.record_action(
+            agent_tracker = self._get_agent_tracker(agent_username)
+            agent_tracker.record_action(
                 agent_username, tool_name, parameters, formatted_response
             )
             
@@ -125,7 +141,8 @@ class AgentToolExecutor:
             }
             
             # Record failed action
-            self.action_tracker.record_action(
+            agent_tracker = self._get_agent_tracker(agent_username)
+            agent_tracker.record_action(
                 agent_username, tool_name, parameters, error_response
             )
             
@@ -179,7 +196,8 @@ class AgentToolExecutor:
             
             # Check if mapping source is a context parameter
             elif mapping_source in tool_def.context_params:
-                context_value = self.action_tracker.resolve_context_value(
+                agent_tracker = self._get_agent_tracker(agent_username)
+                context_value = agent_tracker.resolve_context_value(
                     agent_username, mapping_source, tool_parameters
                 )
                 if context_value is not None:
@@ -256,11 +274,17 @@ class AgentToolExecutor:
         Returns:
             Dictionary containing agent's current context
         """
-        return self.action_tracker.get_agent_context(agent_username)
+        agent_tracker = self._get_agent_tracker(agent_username)
+        return agent_tracker.get_agent_context(agent_username)
     
     def clear_agent_history(self, agent_username: str):
         """Clear action history for a specific agent."""
-        self.action_tracker.clear_agent_history(agent_username)
+        if agent_username in self._agent_trackers:
+            del self._agent_trackers[agent_username]
+    
+    def clear_all_agent_history(self):
+        """Clear action history for all agents."""
+        self._agent_trackers.clear()
     
     def register_custom_tool(self, tool_def: ToolDefinition):
         """Register a custom tool definition."""
@@ -271,6 +295,23 @@ class AgentToolExecutor:
     def register_custom_service(self, service_name: str, service_func: callable):
         """Register a custom platform service."""
         self._service_cache[service_name] = service_func
+    
+    def execute_tool_calls(self, agent_usernames: List[str], tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Execute multiple tool calls sequentially for an agent.
+        
+        Args:
+            agent_username: The agent's username
+            tool_calls: List of tool call dictionaries from the agent
+            
+        Returns:
+            List of response dictionaries in the same order as tool_calls
+        """
+        results = []
+        for (agent_username, tool_call) in zip(agent_usernames, tool_calls):
+            result = self.execute_tool_call(agent_username, tool_call)
+            results.append(result)
+        return results
 
     
 

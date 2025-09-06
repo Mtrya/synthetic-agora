@@ -38,7 +38,6 @@ class DuplicateError(DatabaseOperationError):
 def create_user(
     session: Session,
     username: str,
-    display_name: Optional[str] = None,
     bio: Optional[str] = None
 ) -> User:
     """
@@ -47,7 +46,6 @@ def create_user(
     Args:
         session: Database session
         username: Unique username
-        display_name: Optional display name
         bio: Optional user bio
 
     Returns:
@@ -55,7 +53,6 @@ def create_user(
     """
     user = User(
         username=username,
-        display_name=display_name,
         bio=bio
     )
 
@@ -93,7 +90,7 @@ def update_user(
     Args:
         session: Database session
         user_id: User ID to update
-        **updates: Fields to update (display_name, bio, etc.)
+        **updates: Fields to update (bio, etc.)
         
     Returns:
         Updated User object
@@ -432,6 +429,15 @@ def get_reaction_counts(session: Session, post_id: int) -> Dict[str, int]:
     ).group_by(Reaction.reaction_type).all()
     
     return {reaction_type: count for reaction_type, count in results}
+
+def get_user_reactions(session: Session, user_id: int) -> List[Reaction]:
+    """Get all reactions by a user (excluding soft-deleted ones)."""
+    return session.query(Reaction).filter(
+        and_(
+            Reaction.user_id == user_id,
+            Reaction.deleted_at.is_(None)
+        )
+    ).all()
 
 def soft_delete_reaction(
     session: Session,

@@ -22,7 +22,6 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(50), unique=True, nullable=True, index=True)
-    display_name = Column(String(100), nullable=True)
     bio = Column(Text, nullable=True)
 
     # Timestamps

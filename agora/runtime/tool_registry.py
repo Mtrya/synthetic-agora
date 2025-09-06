@@ -18,7 +18,7 @@ class ToolDefinition:
     service: str  # Database service name, e.g., "create_user_post"
     arguments_mapping: Dict[str, str]  # Maps service args to tool params or context
     context_params: List[str]  # Parameters to infer from context
-    response_formatter: Optional[str]  # Method name for response formatting
+    response_formatter: Callable[[Dict[str, Any]], Dict[str, Any]]  # Response formatting function
 
 
 class ToolRegistry:
@@ -26,14 +26,25 @@ class ToolRegistry:
     
     def __init__(self):
         self._tools: Dict[str, ToolDefinition] = {}
-        self._response_formatters: Dict[str, Callable] = {}
         self._register_default_tools()
-        self._register_response_formatters()
     
     def _register_default_tools(self):
         """Register the default set of social media tools."""
         
         # Like post tool
+        def format_like_response(db_result: Dict[str, Any]) -> Dict[str, Any]:
+            """Format like_post response."""
+            if not db_result.get('success'):
+                return db_result
+            return {
+                'success': True,
+                'message': db_result.get('message', 'Post liked successfully'),
+                'data': {
+                    'action': 'like_post',
+                    'reaction_counts': db_result.get('data', {}).get('reaction_counts', {})
+                }
+            }
+        
         self.register_tool(ToolDefinition(
             tool="like_post",
             description="Like a post by its title",
@@ -49,10 +60,23 @@ class ToolRegistry:
                 "post_id": "target_post_id"
             },
             context_params=["agent_username", "target_post_id"],
-            response_formatter="format_like_response"
+            response_formatter=format_like_response
         ))
         
         # Create post tool
+        def format_create_post_response(db_result: Dict[str, Any]) -> Dict[str, Any]:
+            """Format create_post response."""
+            if not db_result.get('success'):
+                return db_result
+            return {
+                'success': True,
+                'message': db_result.get('message', 'Post created successfully'),
+                'data': {
+                    'action': 'create_post',
+                    'post': db_result.get('data')
+                }
+            }
+        
         self.register_tool(ToolDefinition(
             tool="create_post",
             description="Create a new post",
@@ -63,7 +87,7 @@ class ToolRegistry:
                 },
                 "title": {
                     "type": "string",
-                    "description": "Optional title for the post",
+                    "description": "Title for the post",
                     "required": False
                 }
             },
@@ -74,10 +98,23 @@ class ToolRegistry:
                 "title": "title"
             },
             context_params=["agent_username"],
-            response_formatter="format_create_post_response"
+            response_formatter=format_create_post_response
         ))
         
         # Follow user tool
+        def format_follow_response(db_result: Dict[str, Any]) -> Dict[str, Any]:
+            """Format follow_user response."""
+            if not db_result.get('success'):
+                return db_result
+            return {
+                'success': True,
+                'message': db_result.get('message', 'User followed successfully'),
+                'data': {
+                    'action': 'follow_user',
+                    'following_count': db_result.get('data', {}).get('following_count', 0)
+                }
+            }
+        
         self.register_tool(ToolDefinition(
             tool="follow_user",
             description="Follow another user",
@@ -93,10 +130,24 @@ class ToolRegistry:
                 "followed_username": "username"
             },
             context_params=["agent_username"],
-            response_formatter="format_follow_response"
+            response_formatter=format_follow_response
         ))
         
         # Get feed tool
+        def format_feed_response(db_result: Dict[str, Any]) -> Dict[str, Any]:
+            """Format get_feed response."""
+            if not db_result.get('success'):
+                return db_result
+            return {
+                'success': True,
+                'message': 'Feed retrieved successfully',
+                'data': {
+                    'action': 'get_feed',
+                    'posts': [item.get('post', {}) for item in db_result.get('data', [])],
+                    'scores': [item.get('relevance_score', 0) for item in db_result.get('data', [])]
+                }
+            }
+        
         self.register_tool(ToolDefinition(
             tool="get_feed",
             description="Get your personalized feed",
@@ -114,10 +165,23 @@ class ToolRegistry:
                 "limit": "limit"
             },
             context_params=["agent_username"],
-            response_formatter="format_feed_response"
+            response_formatter=format_feed_response
         ))
         
         # Get post details tool
+        def format_post_details_response(db_result: Dict[str, Any]) -> Dict[str, Any]:
+            """Format get_post_details response."""
+            if not db_result.get('success'):
+                return db_result
+            return {
+                'success': True,
+                'message': 'Post details retrieved successfully',
+                'data': {
+                    'action': 'get_post_details',
+                    'post': db_result.get('data')
+                }
+            }
+        
         self.register_tool(ToolDefinition(
             tool="get_post_details",
             description="Get detailed information about a post",
@@ -132,10 +196,23 @@ class ToolRegistry:
                 "post_id": "target_post_id"
             },
             context_params=["target_post_id"],
-            response_formatter="format_post_details_response"
+            response_formatter=format_post_details_response
         ))
         
         # Create comment tool
+        def format_create_comment_response(db_result: Dict[str, Any]) -> Dict[str, Any]:
+            """Format create_comment response."""
+            if not db_result.get('success'):
+                return db_result
+            return {
+                'success': True,
+                'message': db_result.get('message', 'Comment created successfully'),
+                'data': {
+                    'action': 'create_comment',
+                    'comment': db_result.get('data')
+                }
+            }
+        
         self.register_tool(ToolDefinition(
             tool="create_comment",
             description="Create a comment on a post",
@@ -156,19 +233,9 @@ class ToolRegistry:
                 "content": "content"
             },
             context_params=["agent_username", "target_post_id"],
-            response_formatter="format_create_comment_response"
+            response_formatter=format_create_comment_response
         ))
     
-    def _register_response_formatters(self):
-        """Register response formatting methods."""
-        self._response_formatters.update({
-            "format_like_response": self.format_like_response,
-            "format_create_post_response": self.format_create_post_response,
-            "format_follow_response": self.format_follow_response,
-            "format_feed_response": self.format_feed_response,
-            "format_post_details_response": self.format_post_details_response,
-            "format_create_comment_response": self.format_create_comment_response,
-        })
     
     def register_tool(self, tool_def: ToolDefinition):
         """Register a new tool definition."""
@@ -213,98 +280,9 @@ class ToolRegistry:
     def format_response(self, tool_name: str, db_result: Dict[str, Any]) -> Dict[str, Any]:
         """Format a database service response using the appropriate formatter."""
         tool_def = self.get_tool(tool_name)
-        if not tool_def or not tool_def.response_formatter:
+        if not tool_def:
             return db_result
         
-        formatter = self._response_formatters.get(tool_def.response_formatter)
-        if formatter:
-            return formatter(db_result)
-        
-        return db_result
+        return tool_def.response_formatter(db_result)
     
-    # Response formatting methods
-    def format_like_response(self, db_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Format like_post response."""
-        if not db_result.get('success'):
-            return db_result
-        
-        return {
-            'success': True,
-            'message': db_result.get('message', 'Post liked successfully'),
-            'data': {
-                'action': 'like_post',
-                'reaction_counts': db_result.get('data', {}).get('reaction_counts', {})
-            }
-        }
-    
-    def format_create_post_response(self, db_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Format create_post response."""
-        if not db_result.get('success'):
-            return db_result
-        
-        return {
-            'success': True,
-            'message': db_result.get('message', 'Post created successfully'),
-            'data': {
-                'action': 'create_post',
-                'post': db_result.get('data')
-            }
-        }
-    
-    def format_follow_response(self, db_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Format follow_user response."""
-        if not db_result.get('success'):
-            return db_result
-        
-        return {
-            'success': True,
-            'message': db_result.get('message', 'User followed successfully'),
-            'data': {
-                'action': 'follow_user',
-                'following_count': db_result.get('data', {}).get('following_count', 0)
-            }
-        }
-    
-    def format_feed_response(self, db_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Format get_feed response."""
-        if not db_result.get('success'):
-            return db_result
-        
-        return {
-            'success': True,
-            'message': 'Feed retrieved successfully',
-            'data': {
-                'action': 'get_feed',
-                'posts': [item.get('post', {}) for item in db_result.get('data', [])],
-                'scores': [item.get('relevance_score', 0) for item in db_result.get('data', [])]
-            }
-        }
-    
-    def format_post_details_response(self, db_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Format get_post_details response."""
-        if not db_result.get('success'):
-            return db_result
-        
-        return {
-            'success': True,
-            'message': 'Post details retrieved successfully',
-            'data': {
-                'action': 'get_post_details',
-                'post': db_result.get('data')
-            }
-        }
-    
-    def format_create_comment_response(self, db_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Format create_comment response."""
-        if not db_result.get('success'):
-            return db_result
-        
-        return {
-            'success': True,
-            'message': db_result.get('message', 'Comment created successfully'),
-            'data': {
-                'action': 'create_comment',
-                'comment': db_result.get('data')
-            }
-        }
     
