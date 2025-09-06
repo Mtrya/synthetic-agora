@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 
-from . import operations as ops
+from . import operations as _ops
 
 # ============================================================================
 # USER SERVICES
@@ -23,7 +23,7 @@ def create_user_account(
 ) -> dict:
     """Create a new user account."""
     try:
-        user = ops.create_user(session, username, display_name, bio)
+        user = _ops.create_user(session, username, display_name, bio)
         profile = get_user_profile(session, username)
         
         return {
@@ -31,7 +31,7 @@ def create_user_account(
             "message": f"User @{username} created successfully",
             "data": profile
         }
-    except ops.DuplicateError as e:
+    except _ops.DuplicateError as e:
         return {
             "success": False,
             "message": str(e),
@@ -40,14 +40,14 @@ def create_user_account(
 
 def get_user_profile(session: Session, username: str) -> Optional[dict]:
     """Get user profile with computed stats."""
-    user = ops.get_user_by_username(session, username)
+    user = _ops.get_user_by_username(session, username)
     if not user:
         return None
     
     # Get computed stats
-    posts = ops.get_posts_by_user(session, user.id, limit=1000, include_comments=False)
-    followers = ops.get_followers(session, user.id)
-    following = ops.get_following(session, user.id)
+    posts = _ops.get_posts_by_user(session, user.id, limit=1000, include_comments=False)
+    followers = _ops.get_followers(session, user.id)
+    following = _ops.get_following(session, user.id)
     
     return {
         "id": user.id,
@@ -62,21 +62,21 @@ def get_user_profile(session: Session, username: str) -> Optional[dict]:
 
 def get_user_stats(session: Session, username: str) -> Optional[dict]:
     """Get detailed user statistics."""
-    user = ops.get_user_by_username(session, username)
+    user = _ops.get_user_by_username(session, username)
     if not user:
         return None
     
-    all_posts = ops.get_posts_by_user(session, user.id, limit=10000, include_comments=True)
+    all_posts = _ops.get_posts_by_user(session, user.id, limit=10000, include_comments=True)
     posts_only = [p for p in all_posts if not p.is_comment]
     comments_only = [p for p in all_posts if p.is_comment]
     
-    followers = ops.get_followers(session, user.id)
-    following = ops.get_following(session, user.id)
+    followers = _ops.get_followers(session, user.id)
+    following = _ops.get_following(session, user.id)
     
     # Calculate total likes received across all posts
     total_likes = 0
     for post in posts_only:
-        reaction_counts = ops.get_reaction_counts(session, post.id)
+        reaction_counts = _ops.get_reaction_counts(session, post.id)
         total_likes += reaction_counts.get("like", 0)
     
     return {
@@ -101,7 +101,7 @@ def create_user_post(
 ) -> dict:
     """Create a new post for a user."""
     try:
-        user = ops.get_user_by_username(session, username)
+        user = _ops.get_user_by_username(session, username)
         if not user:
             return {
                 "success": False,
@@ -109,7 +109,7 @@ def create_user_post(
                 "data": None
             }
         
-        post = ops.create_post(session, user.id, content, title=title)
+        post = _ops.create_post(session, user.id, content, title=title)
         post_data = _format_post_data(session, post)
         
         return {
@@ -132,7 +132,7 @@ def create_comment(
 ) -> dict:
     """Create a comment on a post."""
     try:
-        user = ops.get_user_by_username(session, username)
+        user = _ops.get_user_by_username(session, username)
         if not user:
             return {
                 "success": False,
@@ -140,7 +140,7 @@ def create_comment(
                 "data": None
             }
         
-        comment = ops.create_post(session, user.id, content, parent_post_id=post_id)
+        comment = _ops.create_post(session, user.id, content, parent_post_id=post_id)
         comment_data = _format_post_data(session, comment)
         
         return {
@@ -148,7 +148,7 @@ def create_comment(
             "message": f"Comment created successfully (ID: {comment.id})",
             "data": comment_data
         }
-    except ops.PostNotFoundError:
+    except _ops.PostNotFoundError:
         return {
             "success": False,
             "message": f"Post {post_id} not found",
@@ -161,50 +161,25 @@ def create_comment(
             "data": None
         }
 
+# Import feed algorithm from dedicated module
+from . import feed_algorithm
+
 def get_user_feed(
     session: Session,
     username: str,
     limit: int = 20
 ) -> List[dict]:
-    """Get personalized feed for a user."""
-    user = ops.get_user_by_username(session, username)
-    if not user:
-        return []
+    """
+    Get personalized feed for a user.
     
-    # Get users this user follows
-    following = ops.get_following(session, user.id)
-    following_ids = [u.id for u in following]
-    
-    # Include user's own posts
-    following_ids.append(user.id)
-    
-    # Get recent posts from followed users
-    feed_posts = []
-    for user_id in following_ids:
-        posts = ops.get_posts_by_user(session, user_id, limit=10, include_comments=False)
-        feed_posts.extend(posts)
-    
-    # Sort by creation time (newest first)
-    feed_posts.sort(key=lambda p: p.created_at, reverse=True)
-    
-    # Format as feed items with simple relevance scoring
-    feed_items = []
-    for post in feed_posts[:limit]:
-        post_data = _format_post_data(session, post)
-        # Simple relevance: newer posts get higher scores
-        hours_old = (datetime.now(post.created_at.tzinfo) - post.created_at).total_seconds() / 3600
-        relevance_score = max(0.1, 1.0 - (hours_old / 24))  # Decays over 24 hours
-        
-        feed_items.append({
-            "post": post_data,
-            "relevance_score": relevance_score
-        })
-    
-    return feed_items
+    This function delegates to the sophisticated feed algorithm
+    in the dedicated feed_algorithm module.
+    """
+    return feed_algorithm.get_user_feed(session, username, limit)
 
 def get_post_details(session: Session, post_id: int) -> Optional[dict]:
     """Get detailed information about a specific post."""
-    post = ops.get_post_by_id(session, post_id)
+    post = _ops.get_post_by_id(session, post_id)
     if not post:
         return None
     
@@ -212,7 +187,7 @@ def get_post_details(session: Session, post_id: int) -> Optional[dict]:
 
 def get_post_by_title(session: Session, title: str) -> Optional[dict]:
     """Get detailed information about a specific post by title."""
-    post = ops.get_post_by_title(session, title)
+    post = _ops.get_post_by_title(session, title)
     if not post:
         return None
     
@@ -266,8 +241,8 @@ def follow_user(
 ) -> dict:
     """Create a follow relationship."""
     try:
-        follower = ops.get_user_by_username(session, follower_username)
-        followed = ops.get_user_by_username(session, followed_username)
+        follower = _ops.get_user_by_username(session, follower_username)
+        followed = _ops.get_user_by_username(session, followed_username)
         
         if not follower:
             return {
@@ -290,17 +265,17 @@ def follow_user(
                 "data": None
             }
         
-        ops.create_relationship(session, follower.id, followed.id, "follow")
+        _ops.create_relationship(session, follower.id, followed.id, "follow")
         
         # Get updated counts
-        following_count = len(ops.get_following(session, follower.id))
+        following_count = len(_ops.get_following(session, follower.id))
         
         return {
             "success": True,
             "message": f"@{follower_username} is now following @{followed_username}",
             "data": {"following_count": following_count}
         }
-    except ops.DuplicateError:
+    except _ops.DuplicateError:
         return {
             "success": False,
             "message": f"@{follower_username} is already following @{followed_username}",
@@ -314,8 +289,8 @@ def unfollow_user(
 ) -> dict:
     """Remove a follow relationship."""
     try:
-        follower = ops.get_user_by_username(session, follower_username)
-        followed = ops.get_user_by_username(session, followed_username)
+        follower = _ops.get_user_by_username(session, follower_username)
+        followed = _ops.get_user_by_username(session, followed_username)
         
         if not follower or not followed:
             return {
@@ -324,10 +299,10 @@ def unfollow_user(
                 "data": None
             }
         
-        relationship = ops.soft_delete_relationship(session, follower.id, followed.id, "follow")
+        relationship = _ops.soft_delete_relationship(session, follower.id, followed.id, "follow")
         
         if relationship:
-            following_count = len(ops.get_following(session, follower.id))
+            following_count = len(_ops.get_following(session, follower.id))
             return {
                 "success": True,
                 "message": f"@{follower_username} unfollowed @{followed_username}",
@@ -353,7 +328,7 @@ def like_post(
 ) -> dict:
     """Like a post."""
     try:
-        user = ops.get_user_by_username(session, username)
+        user = _ops.get_user_by_username(session, username)
         if not user:
             return {
                 "success": False,
@@ -361,17 +336,17 @@ def like_post(
                 "data": None
             }
         
-        ops.create_reaction(session, user.id, post_id, "like")
+        _ops.create_reaction(session, user.id, post_id, "like")
         
         # Get updated reaction counts
-        reaction_counts = ops.get_reaction_counts(session, post_id)
+        reaction_counts = _ops.get_reaction_counts(session, post_id)
         
         return {
             "success": True,
             "message": f"@{username} liked post {post_id}",
             "data": {"reaction_counts": reaction_counts}
         }
-    except ops.PostNotFoundError:
+    except _ops.PostNotFoundError:
         return {
             "success": False,
             "message": f"Post {post_id} not found",
@@ -391,7 +366,7 @@ def unlike_post(
 ) -> dict:
     """Remove like from a post."""
     try:
-        user = ops.get_user_by_username(session, username)
+        user = _ops.get_user_by_username(session, username)
         if not user:
             return {
                 "success": False,
@@ -399,10 +374,10 @@ def unlike_post(
                 "data": None
             }
         
-        reaction = ops.soft_delete_reaction(session, user.id, post_id, "like")
+        reaction = _ops.soft_delete_reaction(session, user.id, post_id, "like")
         
         if reaction:
-            reaction_counts = ops.get_reaction_counts(session, post_id)
+            reaction_counts = _ops.get_reaction_counts(session, post_id)
             return {
                 "success": True,
                 "message": f"@{username} unliked post {post_id}",
@@ -428,13 +403,13 @@ def unlike_post(
 def _format_post_data(session: Session, post) -> dict:
     """Convert database Post object to dict format."""
     # Get author info
-    author = ops.get_user_by_id(session, post.user_id)
+    author = _ops.get_user_by_id(session, post.user_id)
     
     # Get comment count
-    comments = ops.get_comments_for_post(session, post.id)
+    comments = _ops.get_comments_for_post(session, post.id)
     
     # Get reaction counts
-    reaction_counts = ops.get_reaction_counts(session, post.id)
+    reaction_counts = _ops.get_reaction_counts(session, post.id)
     
     return {
         "id": post.id,

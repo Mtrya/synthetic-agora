@@ -2,185 +2,204 @@
 
 ## Overall Architecture
 
-The framework consists of five core modules with clear separation of concerns:
+The framework consists of modular layers with clear separation of concerns:
 
 ```docs
-database/ → Foundation layer (persistent data)
-executor/ → Runtime layer (agent execution, LLM coordination)
-platform/ → Social physics layer (algorithms, trends, time)
-agents/ → Template layer (static definitions, personalities)
-analysis/ → Monitoring layer (metrics, visualization)
+platform/ → Foundation layer (data model + operations + algorithms) ✅ COMPLETE
+runtime/ → Tool execution layer (agent-tool-platform bridge) ✅ COMPLETE  
+agents/ → Template layer (static definitions, personalities) 🚧 PLANNED
+analysis/ → Monitoring layer (metrics, visualization) 🚧 PLANNED
 ```
 
-**Critical Separation**: `agents/` defines static templates (DNA), `executor/` manages dynamic runtime (instances).
+**Critical Separation**: `agents/` defines static templates (DNA), `runtime/` manages dynamic execution (instances).
 
-## Revised File Structure
+## Current File Structure
 
 ```files
 synthetic-agora/
-├── synthetic_agora/
+├── agora/
 │   ├── __init__.py
-│   ├── main.py                    # Main simulation runner
-│   ├── cli.py                     # Command-line interface
-│   ├── core/
+│   ├── main.py                    # Main simulation runner (EMPTY)
+│   ├── cli.py                     # Command-line interface (EMPTY)
+│   ├── platform/                  # ✅ COMPLETE
+│   │   ├── __init__.py             # Clean API exposure
+│   │   ├── models.py               # Database schemas (207 lines)
+│   │   ├── operations.py           # Atomic CRUD operations (591 lines)
+│   │   ├── services.py             # Business operations (452 lines)
+│   │   ├── connection.py           # Database management (252 lines)
+│   │   └── feed_algorithm.py       # Content recommendation (258 lines)
+│   ├── runtime/                   # ✅ COMPLETE
 │   │   ├── __init__.py
-│   │   ├── database/
-│   │   │   ├── __init__.py
-│   │   │   ├── models.py          # Database schemas and relationships
-│   │   │   ├── operations.py      # Atomic CRUD operations  
-│   │   │   ├── services.py        # Business level operations
-│   │   │   └── connection.py      # Database connection management
-│   │   ├── executor/
-│   │   │   ├── __init__.py
-│   │   │   ├── orchestrator.py    # Main simulation loop (3.1-3.5 workflow)
-│   │   │   ├── tools.py           # High-level social tools with context inference
-│   │   │   ├── memory.py          # Agent memory management and belief updates
-│   │   │   ├── api_batch.py       # Batch API call management
-│   │   │   ├── api_async.py       # Asynchronous execution handling
-│   │   │   └── state_manager.py   # Agent session and LLM call state tracking
-│   │   ├── platform/
-│   │   │   ├── __init__.py
-│   │   │   ├── feed_algorithms.py # Content recommendation and distribution
-│   │   │   ├── trending.py        # Trending topic and viral content mechanics  
-│   │   │   ├── moderation.py      # Content moderation and platform rules
-│   │   │   └── time_stepping.py   # Simulation time progression logic
-│   │   ├── agents/
-│   │   │   ├── __init__.py
-│   │   │   ├── personalities.py   # Static agent templates (DNA)
-│   │   │   ├── belief_systems.py  # Baseline belief models and cognitive biases
-│   │   │   └── interaction_patterns.py # Social behavior strategies and templates
-│   │   └── analysis/
-│   │       ├── __init__.py
-│   │       ├── network_metrics.py # Graph analysis and social network metrics
-│   │       ├── content_analysis.py# Sentiment, topic, engagement analysis  
-│   │       ├── behavioral_patterns.py # Agent behavior and interaction patterns
-│   │       └── visualization.py   # Real-time monitoring and plotting
-│   └── config.yaml                # Main configuration file
+│   │   ├── tool_registry.py        # Tool definitions (309 lines)
+│   │   ├── action_tracker.py       # Context resolution (224 lines)
+│   │   └── tool_executor.py        # Main orchestrator (276 lines)
+│   ├── agents/                    # 🚧 PLANNED
+│   │   └── (empty directory)
+│   └── analysis/                  # 🚧 PLANNED
+│       └── (empty directory)
 ├── tests/
 ├── examples/  
 ├── docs/
-└── requirements.txt
+├── pyproject.toml                 # Project dependencies
+└── README.md
 ```
 
-## Core Component Descriptions
+## Current Implementation Status
 
-### 1. Database (`core/database/`) - Foundation Layer
+### 1. Platform Layer (`agora/platform/`) - ✅ COMPLETE
 
-**Purpose**: Provides comprehensive social media data model with atomic operations and standard tools.
+**Purpose**: Provides comprehensive data model, operations, and content algorithms for social media simulation.
 
-**Key Features**:
+**Implemented Features**:
 
-- **models.py**: Complete social media schemas (users, posts, relationships, communities, messages, reactions)  
-- **operations.py**: Atomic CRUD operations (create_content, add_reaction, create_relationship, etc.)
-- **services.py**: Business-level social media functions (soc.create_user_post, soc.follow_user, etc.)
-- **connection.py**: Database management and connection handling
+- **models.py** (207 lines): Complete social media schemas with 5 core models:
+  - `User`: User profiles, timestamps, soft delete
+  - `Post`: Posts and comments with parent-child relationships, titles
+  - `Relationship`: User-to-user relationships (follow, friend, block)
+  - `Reaction`: Post reactions (like, dislike, love)
+  - `Community`: User communities and groups
+  - `Membership`: User-community memberships with roles
+
+- **operations.py** (591 lines): Atomic CRUD operations:
+  - User operations: `create_user()`, `get_user_by_username()`, `get_user_by_id()`
+  - Post operations: `create_post()`, `get_post_by_id()`, `get_posts_by_user()`, `get_post_by_title()`
+  - Relationship operations: `create_relationship()`, `get_followers()`, `get_following()`
+  - Reaction operations: `create_reaction()`, `get_reaction_counts()`
+  - Community operations: `create_community()`, `add_user_to_community()`
+  - Soft delete support across all operations
+
+- **services.py** (452 lines): Business-level social media functions:
+  - User services: `create_user_account()`, `get_user_profile()`, `get_user_stats()`
+  - Post services: `create_user_post()`, `create_comment()`, `get_post_details()`, `get_post_by_title()`
+  - Social services: `follow_user()`, `unfollow_user()`, `like_post()`, `unlike_post()`
+  - Content services: `get_user_feed()`, `get_trending_posts()`
+  - Feed integration with sophisticated algorithm
+
+- **feed_algorithm.py** (258 lines): Advanced content recommendation system:
+  - Multi-factor relevance scoring (temporal 40%, engagement 30%, social 30%)
+  - Diversity boosting to prevent feed domination
+  - Social proximity calculations and mutual connection analysis
+  - Sophisticated post ranking with metadata
+
+- **connection.py** (252 lines): Database management and connection handling:
+  - `DatabaseManager` class for connection lifecycle
+  - `initialize_database()` for quick setup
+  - Session management and cleanup
+
+- `__init__.py`: Clean API exposing only `DatabaseManager`, `initialize_database`, and `services`
 
 **Dependencies**: None (foundation layer)
 
-**Implementation Priority**: Highest - All other modules depend on this
+**Status**: Fully implemented and tested (1,776 total lines)
 
-### 2. Executor (`core/executor/`) - Agent Runtime Layer
+### 2. Runtime Layer (`agora/runtime/`) - ✅ COMPLETE
 
-**Purpose**: Manages dynamic agent execution, LLM coordination, and high-level tool inference. The "agent runtime" that brings static templates to life.
+**Purpose**: Bridges semantic agent tool calls with platform services through sophisticated execution and context management.
 
-**Key Features**:
+**Implemented Features**:
 
-- **orchestrator.py**: Main simulation loop implementing the Agent<->Platform interaction workflow (context preparation → LLM coordination → memory updates)
-- **tools.py**: High-level social tools with context inference (`post(content)` not `post(user_id, content)`)
-- **memory.py**: Agent memory management, belief updates, and context window optimization
-- **api_batch.py**: Batch processing for cost-efficient API calls
-- **api_async.py**: Asynchronous execution for speed optimization  
-- **state_manager.py**: Agent session state and LLM call context tracking
+- **tool_registry.py** (309 lines): Comprehensive tool definition and mapping system:
+  - `ToolDefinition` dataclass mapping semantic tools to platform services
+  - `ToolRegistry` with 6 pre-registered social media tools
+  - Dynamic tool registration and response formatting
+  - Schema generation for LLM consumption
+  - Support for custom tool registration
 
-**Dependencies**: database/ (read/write), agents/ (templates), platform/ (feed data)
+- **action_tracker.py** (224 lines): Temporal action tracking and context resolution:
+  - `ActionTracker` for maintaining agent action history
+  - `ActionRecord` for structured action logging
+  - Context parameter resolution (post_id by title, cross-user actions)
+  - Agent context management with memory decay
+  - Semantic-to-database ID translation
 
-**Implementation Priority**: High - Core innovation enabling LLM-database integration with context inference
+- **tool_executor.py** (276 lines): Main orchestration engine:
+  - `AgentToolExecutor` coordinating complete workflow
+  - Dynamic service loading and caching
+  - Graceful error handling for invalid tool calls
+  - Context-aware argument building
+  - Multi-step workflow: tool lookup → argument mapping → service execution → response formatting
 
-### 3. Platform (`core/platform/`) - Social Media Mechanics
+- `__init__.py`: Clean API exposing all runtime components
 
-**Purpose**: Implements platform-level behaviors and algorithms that shape social interactions.
+**Key Capabilities**:
 
-**Key Features**:
+- Execute tool calls with semantic identifiers (e.g., `like_post(title: "Hello World")`)
+- Automatic context resolution (title → post_id, username inference)
+- Response formatting with meaningful messages for agents
+- Support for cross-agent actions and context sharing
+- Extensible tool registration system
 
-- **feed_algorithms.py**: Content recommendation, personalization, and distribution algorithms
-- **trending.py**: Trending topic detection, viral content mechanics, zeitgeist tracking
-- **moderation.py**: Content filtering, community guidelines, automated moderation
-- **time_stepping.py**: Discrete round progression, event scheduling, temporal dynamics
+**Dependencies**: platform/ (read/write)
 
-**Dependencies**: database/ (read/write for platform operations)
+**Status**: Fully implemented and tested (826 total lines)
 
-**Implementation Priority**: Medium - Provides realistic platform dynamics
+### 3. Agents Layer (`agora/agents/`) - 🚧 PLANNED
 
-### 4. Agents (`core/agents/`) - Agent Template Layer
+**Purpose**: Defines static agent templates and baseline characteristics.
 
-**Purpose**: Defines static agent templates and baseline characteristics. The "agent DNA" that gets instantiated by the executor.
+**Planned Features**:
 
-**Key Features**:
-
-- **personalities.py**: Static agent templates (political orientations, demographics, interests)
-- **belief_systems.py**: Baseline belief models and cognitive bias templates
-- **interaction_patterns.py**: Social behavior strategies and engagement templates
+- **personalities.py**: Static agent templates (political orientations, demographics)
+- **belief_systems.py**: Baseline belief models and cognitive biases
+- **interaction_patterns.py**: Social behavior strategies and templates
 
 **Dependencies**: None (pure definitions, no runtime state)
 
-**Implementation Priority**: Medium - Defines agent sophistication level through templates
+**Status**: Empty directory, planning phase
 
-### 5. Analysis (`core/analysis/`) - Monitoring and Research Tools
+### 4. Analysis Layer (`agora/analysis/`) - 🚧 PLANNED
 
 **Purpose**: Comprehensive analysis and visualization of simulation evolution.
 
-**Key Features**:
+**Planned Features**:
 
-- **network_metrics.py**: Social graph analysis, centrality measures, community detection
-- **content_analysis.py**: Sentiment tracking, topic modeling, information diffusion analysis
-- **behavioral_patterns.py**: Agent interaction analysis, influence networks, engagement metrics  
-- **visualization.py**: Real-time monitoring dashboards, network evolution plots, opinion dynamics visualization
+- **network_metrics.py**: Social graph analysis, centrality measures
+- **content_analysis.py**: Sentiment tracking, topic modeling
+- **behavioral_patterns.py**: Agent interaction analysis, engagement metrics
+- **visualization.py**: Real-time monitoring dashboards
 
-**Dependencies**: database/ (read-only for analysis and monitoring)
+**Dependencies**: platform/ (read-only for analysis)
 
-**Implementation Priority**: Medium - Essential for research utility
+**Status**: Empty directory, planning phase
 
-This architecture ensures each module can be developed and tested independently while maintaining clean dependencies through the database foundation.
+## Technical Implementation Details
 
-## Workflow Architecture
+### Architecture Highlights
 
-### Main Simulation Loop (in `executor/orchestrator.py`)
+1. **Semantic-to-Database Bridge**: Runtime layer translates high-level agent intentions (`like_post(title: "Hello")`) to database operations (`like_post(session, "alice", 1)`)
+2. **Context Awareness**: Action tracking maintains temporal context for resolving semantic identifiers to database IDs
+3. **Modular Design**: Clean separation between data persistence (platform), execution logic (runtime), and agent definitions (agents)
+4. **Sophisticated Feed Algorithm**: Multi-factor scoring with diversity boosting for realistic content distribution
+5. **Clean APIs**: Each layer exposes only necessary components while hiding internal complexity
 
-Each timestep executes the 3.1-3.5 workflow:
+### Key Design Decisions
 
-1. **Context Preparation (3.1)**: Curate chat history and prompts
-   - `platform.get_feed()` → Pure algorithm for content curation
-   - `executor.memory.get_context()` → Agent-specific memory retrieval
+1. **SQLite First**: Simple, file-based database for easy development
+2. **Soft Deletes**: Preserve data integrity while allowing deletion
+3. **Tool Registry Pattern**: Extensible system for mapping agent tools to platform services
+4. **Action Tracking**: Temporal context resolution for semantic identifier mapping
+5. **Relative Imports**: Clean module structure without core/ layer complexity
 
-2. **LLM Coordination (3.2-3.4)**: Tool use loop
-   - `executor.api_batch.send()` → Send to LLM provider
-   - `executor.tools.execute()` → Context-inferred tool execution
-   - `executor.state_manager.track()` → Session state management
+### Development Status
 
-3. **Memory Update (3.5)**: Belief evolution
-   - `executor.memory.update_beliefs()` → Dynamic belief updates
-   - `executor.memory.store_interaction()` → Experience storage
+- **Platform layer**: 100% complete (1,776 lines) ✅
+- **Runtime layer**: 100% complete (826 lines) ✅  
+- **Agents layer**: 0% complete (planning phase) 🚧
+- **Analysis layer**: 0% complete (planning phase) 🚧
 
-### Critical Separation Principle
+## Next Development Steps
 
-- **Templates vs Instances**: `agents/` creates static templates (DNA), `executor/` creates dynamic instances (runtime)
-- **Context Inference**: High-level tools in `executor/tools.py` infer context (`post(content)` → `post(user_id, content)`)
-- **Memory Ownership**: Agent memory is execution state → belongs in `executor/`, not `agents/`
-- **Pure Algorithms**: Feed algorithms, trending, time progression → `platform/` (no agent state)
+1. **Implement agent templates**: Create personality and belief system frameworks in agents/
+2. **Build analysis tools**: Create monitoring and visualization capabilities in analysis/
+3. **Add simulation orchestrator**: Implement main simulation loop in main.py
+4. **Integration testing**: Ensure all modules work together seamlessly
+5. **Performance optimization**: Scale for large numbers of agents and interactions
 
-### Module Interaction Flow
+## Important Notes
 
-```workflow
-main.py
-├── agents.initialize_templates()     # Static personality definitions
-├── executor.initialize_agents()      # Runtime instances with memory
-└── executor.run_simulation()         # Main coordination loop
-    ├── platform.get_feed()           # Pure content algorithms
-    ├── executor.build_context()      # Agent-specific context
-    ├── executor.llm_loop()           # Tool inference & execution
-    └── executor.update_memories()    # Dynamic state updates
-```
+The concept of **"standard social media tools"** is central to this architecture. We aim for a single "greatest common denominator" approach rather than supporting every possible social media feature. This keeps the codebase focused and maintainable while providing essential social media simulation capabilities.
 
-### Important Notes
+**Key Innovation**: The runtime layer's ability to bridge semantic agent calls with database operations through context-aware execution enables sophisticated agent-platform interactions while maintaining clean separation of concerns.
 
-The concept of **"standard social media tools"**, as well as **"standard social media platforms"** and **"standard agents"** is extremely important here. Because this decides the coding style: we want a single "greatest common denominator" instead of "everything for everyone".
+- Put test scripts to tests/.
+- Respect markdownlint specification.

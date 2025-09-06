@@ -1,7 +1,7 @@
 [project]
-name = "synthetic-agora"
+name = "agora"
 version = "0.1.0"
-description = "Add your description here"
+description = "Synthetic Agora - A framework for simulating social media dynamics with AI agents"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
