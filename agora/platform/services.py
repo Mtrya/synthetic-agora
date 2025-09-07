@@ -6,7 +6,7 @@ Used by platform/, agents/, and analysis/ modules for standard social media beha
 """
 
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Optional
 from sqlalchemy.orm import Session
 
 from . import operations as _ops
@@ -25,7 +25,7 @@ def create_user_account(
         user = _ops.create_user(session, username, bio)
         
         # For new user creation, use username as both agent and target
-        profile_result = get_user_profile(session, username, username)
+        profile_result = _agent_get_user_profile(session, username, username)
         
         return {
             "success": True,
@@ -39,7 +39,809 @@ def create_user_account(
             "data": None
         }
 
-def get_user_profile(session: Session, agent_username: str, target_username: str) -> dict:
+# ============================================================================
+# CONTENT CREATE
+# ============================================================================
+
+def agent_create_post(
+    session: Session,
+    agent_username: str,
+    title: str,
+    content: str
+) -> dict:
+    """Create a new post for a user."""
+    try:
+        # Validate inputs
+        if not title or not title.strip():
+            return {
+                "success": False,
+                "message": "Title cannot be empty",
+                "data": None
+            }
+        if not content or not content.strip():
+            return {
+                "success": False,
+                "message": "Content cannot be empty",
+                "data": None
+            }
+        
+        user = _ops.get_user_by_username(session, agent_username)
+        if not user:
+            return {
+                "success": False,
+                "message": f"User @{agent_username} not found",
+                "data": None
+            }
+        
+        post = _ops.create_post(session, user.id, content, title=title.strip())
+        
+        return {
+            "success": True,
+            "message": f"Post created successfully (ID: {post.id})",
+            "data": {
+                "agent_username": agent_username,
+                "title": post.title,
+                "content": post.content,
+                "created_at": post.created_at.isoformat()
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to create post: {str(e)}",
+            "data": None
+        }
+
+def _agent_create_comment(
+    session: Session,
+    agent_username: str,
+    post_id: int,
+    content: str
+) -> dict:
+    """Create a comment on a post."""
+    try:
+        # Validate inputs
+        if not content or not content.strip():
+            return {
+                "success": False,
+                "message": "Content cannot be empty",
+                "data": None
+            }
+        
+        user = _ops.get_user_by_username(session, agent_username)
+        if not user:
+            return {
+                "success": False,
+                "message": f"User @{agent_username} not found",
+                "data": None
+            }
+        
+        # Validate post exists and is not deleted
+        parent_post = _ops.get_post_by_id(session, post_id)
+        if not parent_post or parent_post.deleted_at:
+            return {
+                "success": False,
+                "message": f"Post {post_id} not found",
+                "data": None
+            }
+        
+        comment = _ops.create_post(session, user.id, content.strip(), parent_post_id=post_id)
+        
+        return {
+            "success": True,
+            "message": f"Comment created successfully (ID: {comment.id})",
+            "data": {
+                "agent_username": agent_username,
+                "post_title": parent_post.title,
+                "comment_content": comment.content,
+                "created_at": comment.created_at.isoformat()
+            }
+        }
+    except _ops.PostNotFoundError:
+        return {
+            "success": False,
+            "message": f"Post {post_id} not found",
+            "data": None
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to create comment: {str(e)}",
+            "data": None
+        }
+
+def _agent_create_reply(
+    session: Session,
+    agent_username: str,
+    post_id: int,
+    content: str
+) -> dict:
+    """Create a reply to a comment or another reply."""
+    try:
+        # Validate inputs
+        if not content or not content.strip():
+            return {
+                "success": False,
+                "message": "Content cannot be empty",
+                "data": None
+            }
+        
+        user = _ops.get_user_by_username(session, agent_username)
+        if not user:
+            return {
+                "success": False,
+                "message": f"User @{agent_username} not found",
+                "data": None
+            }
+        
+        # Validate parent post exists and is not deleted
+        parent_post = _ops.get_post_by_id(session, post_id)
+        if not parent_post or parent_post.deleted_at:
+            return {
+                "success": False,
+                "message": f"Post {post_id} not found",
+                "data": None
+            }
+        
+        # Validate parent is a comment or reply (has parent_post_id)
+        if not parent_post.parent_post_id:
+            return {
+                "success": False,
+                "message": f"Post {post_id} is not a comment or reply, cannot reply to it",
+                "data": None
+            }
+        
+        reply = _ops.create_post(session, user.id, content.strip(), parent_post_id=post_id)
+        
+        # Get the content of the parent comment/reply
+        parent_content = parent_post.content
+        
+        return {
+            "success": True,
+            "message": f"Reply created successfully (ID: {reply.id})",
+            "data": {
+                "agent_username": agent_username,
+                "parent_content": parent_content,
+                "reply_content": reply.content,
+                "created_at": reply.created_at.isoformat()
+            }
+        }
+    except _ops.PostNotFoundError:
+        return {
+            "success": False,
+            "message": f"Post {post_id} not found",
+            "data": None
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to create reply: {str(e)}",
+            "data": None
+        }
+
+def agent_create_response(
+    session: Session,
+    agent_username: str,
+    content_type: str,
+    post_id: int,
+    content: str
+) -> dict:
+    """Unified content creation for comments and replies."""
+    if content_type == "comment":
+        return _agent_create_comment(session, agent_username, post_id, content)
+    elif content_type == "reply":
+        return _agent_create_reply(session, agent_username, post_id, content)
+    else:
+        return {
+            "success": False,
+            "message": f"Invalid content_type: {content_type}. Use 'comment' or 'reply'",
+            "data": None
+        }
+
+# ============================================================================
+# CONTENT VIEW
+# ============================================================================
+
+def _agent_get_post_overview(
+    session: Session,
+    agent_username: str,
+    post_id: int
+) -> dict:
+    """Get comprehensive overview of a post with reactions and top comments."""
+    try:
+        # Validate post exists and is not deleted
+        post = _ops.get_post_by_id(session, post_id)
+        if not post or post.deleted_at:
+            return {
+                "success": False,
+                "message": f"Post {post_id} not found",
+                "data": None
+            }
+        
+        # Get author info
+        author = _ops.get_user_by_id(session, post.user_id)
+        author_username = author.username if author else "unknown"
+        
+        # Get reaction counts
+        reaction_counts = _ops.get_reaction_counts(session, post_id)
+        like_count = reaction_counts.get("like", 0)
+        dislike_count = reaction_counts.get("dislike", 0)
+        
+        # Get all comments and replies for counting
+        all_comments = _ops.get_comments_for_post(session, post_id)
+        comment_count = len(all_comments)
+        
+        # Get top 20 comments (excluding replies) with their content
+        top_comments = []
+        for comment in all_comments[:20]:
+            if not comment.parent_post_id:  # Only top-level comments
+                comment_author = _ops.get_user_by_id(session, comment.user_id)
+                top_comments.append({
+                    "content": comment.content,
+                    "author": comment_author.username if comment_author else "unknown",
+                    "created_at": comment.created_at.isoformat()
+                })
+        
+        return {
+            "success": True,
+            "message": f"Retrieved overview for post {post_id}",
+            "data": {
+                "title": post.title,
+                "author_username": author_username,
+                "content": post.content,
+                "created_at": post.created_at.isoformat(),
+                "like_count": like_count,
+                "dislike_count": dislike_count,
+                "comment_count": comment_count,
+                "top_comments": top_comments
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to get post overview: {str(e)}",
+            "data": None
+        }
+
+def _agent_get_post_reactions(
+    session: Session,
+    agent_username: str,
+    post_id: int
+) -> dict:
+    """Get reaction information for a post showing who liked/disliked."""
+    try:
+        # Validate post exists and is not deleted
+        post = _ops.get_post_by_id(session, post_id)
+        if not post or post.deleted_at:
+            return {
+                "success": False,
+                "message": f"Post {post_id} not found",
+                "data": None
+            }
+        
+        # Get all reactions for this post
+        all_reactions = _ops.get_post_reactions(session, post_id)
+        
+        # Separate likes and dislikes
+        like_usernames = []
+        dislike_usernames = []
+        
+        for reaction in all_reactions:
+            user = _ops.get_user_by_id(session, reaction.user_id)
+            if user:
+                if reaction.reaction_type == "like":
+                    like_usernames.append(user.username)
+                elif reaction.reaction_type == "dislike":
+                    dislike_usernames.append(user.username)
+        
+        return {
+            "success": True,
+            "message": f"Retrieved reactions for post {post_id}",
+            "data": {
+                "title": post.title,
+                "likes": like_usernames,
+                "dislikes": dislike_usernames
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to get post reactions: {str(e)}",
+            "data": None
+        }
+
+def _agent_get_post_comment_section(
+    session: Session,
+    agent_username: str,
+    post_id: int
+) -> dict:
+    """Get nested comment structure with replies for a post."""
+    try:
+        # Validate post exists and is not deleted
+        post = _ops.get_post_by_id(session, post_id)
+        if not post or post.deleted_at:
+            return {
+                "success": False,
+                "message": f"Post {post_id} not found",
+                "data": None
+            }
+        
+        # Get all comments and replies
+        all_comments = _ops.get_comments_for_post(session, post_id)
+        
+        # Build nested structure
+        comments_by_parent = {}
+        root_comments = []
+        
+        # First pass: organize by parent
+        for comment in all_comments:
+            author = _ops.get_user_by_id(session, comment.user_id)
+            comment_data = {
+                "content": comment.content,
+                "author": author.username if author else "unknown",
+                "created_at": comment.created_at.isoformat(),
+                "replies": []
+            }
+            
+            if comment.parent_post_id == post_id:
+                # This is a root comment on the post
+                root_comments.append(comment_data)
+                comments_by_parent[comment.id] = comment_data
+            else:
+                # This is a reply to another comment
+                comments_by_parent[comment.id] = comment_data
+        
+        # Second pass: build reply hierarchy
+        for comment in all_comments:
+            if comment.parent_post_id != post_id:
+                # This is a reply, find its parent
+                parent_data = comments_by_parent.get(comment.parent_post_id)
+                if parent_data:
+                    comment_data = comments_by_parent[comment.id]
+                    parent_data["replies"].append(comment_data)
+        
+        return {
+            "success": True,
+            "message": f"Retrieved comment section for post {post_id}",
+            "data": {
+                "title": post.title,
+                "comments": root_comments
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to get comment section: {str(e)}",
+            "data": None
+        }
+
+def agent_view_post(
+    session: Session,
+    agent_username: str,
+    view_type: str,
+    post_id: int
+) -> dict:
+    """Unified post viewing operations."""
+    if view_type == "overview":
+        return _agent_get_post_overview(session, agent_username, post_id)
+    elif view_type == "reactions":
+        return _agent_get_post_reactions(session, agent_username, post_id)
+    elif view_type == "comments":
+        return _agent_get_post_comment_section(session, agent_username, post_id)
+    else:
+        return {
+            "success": False,
+            "message": f"Invalid view_type: {view_type}. Use 'overview', 'reactions', or 'comments'",
+            "data": None
+        }
+
+# ============================================================================
+# CONTENT REACT
+# ============================================================================
+
+def _agent_like_post(
+    session: Session,
+    agent_username: str,
+    post_id: int
+) -> dict:
+    """Like a post."""
+    try:
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
+        
+        # Validate post exists and is not deleted
+        post = _ops.get_post_by_id(session, post_id)
+        if not post:
+            return {
+                "success": False,
+                "message": f"Post {post_id} not found",
+                "data": None
+            }
+        
+        if post.deleted_at is not None:
+            return {
+                "success": False,
+                "message": f"Post {post_id} has been deleted",
+                "data": None
+            }
+        
+        if post.is_comment:
+            return {
+                "success": False,
+                "message": f"Post {post_id} is a comment, use like_comment instead",
+                "data": None
+            }
+        
+        _ops.create_reaction(session, agent.id, post_id, "like")
+        
+        # Get post author info
+        author = _ops.get_user_by_id(session, post.user_id)
+        author_username = author.username if author else "unknown"
+        
+        return {
+            "success": True,
+            "message": f"@{agent_username} liked post '{post.title}' by @{author_username}",
+            "data": {
+                "agent_username": agent_username,
+                "post_title": post.title,
+                "post_author": author_username
+            }
+        }
+    except _ops.PostNotFoundError:
+        return {
+            "success": False,
+            "message": f"Post {post_id} not found",
+            "data": None
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to like post: {str(e)}",
+            "data": None
+        }
+
+def _agent_unlike_post(
+    session: Session,
+    agent_username: str,
+    post_id: int
+) -> dict:
+    """Remove like from a post."""
+    try:
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
+        
+        # Validate post exists and is not deleted
+        post = _ops.get_post_by_id(session, post_id)
+        if not post:
+            return {
+                "success": False,
+                "message": f"Post {post_id} not found",
+                "data": None
+            }
+        
+        if post.deleted_at is not None:
+            return {
+                "success": False,
+                "message": f"Post {post_id} has been deleted",
+                "data": None
+            }
+        
+        if post.is_comment:
+            return {
+                "success": False,
+                "message": f"Post {post_id} is a comment, use unlike_comment instead",
+                "data": None
+            }
+        
+        reaction = _ops.soft_delete_reaction(session, agent.id, post_id, "like")
+        
+        if reaction:
+            # Get post author info
+            author = _ops.get_user_by_id(session, post.user_id)
+            author_username = author.username if author else "unknown"
+            
+            return {
+                "success": True,
+                "message": f"@{agent_username} unliked post '{post.title}' by @{author_username}",
+                "data": {
+                    "agent_username": agent_username,
+                    "post_title": post.title,
+                    "post_author": author_username
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"@{agent_username} had not liked post {post_id}",
+                "data": None
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to unlike post: {str(e)}",
+            "data": None
+        }
+
+def _agent_share_post(
+    session: Session,
+    agent_username: str,
+    post_id: int,
+    comment: Optional[str] = None
+) -> dict:
+    """Share a post by creating a new post with reference to the original."""
+    try:
+        # Validate post exists and is not deleted
+        original_post = _ops.get_post_by_id(session, post_id)
+        if not original_post or original_post.deleted_at:
+            return {
+                "success": False,
+                "message": f"Post {post_id} not found",
+                "data": None
+            }
+        
+        # Validate that it's a post (not a comment/reply)
+        if original_post.parent_post_id:
+            return {
+                "success": False,
+                "message": f"Post {post_id} is a comment or reply, cannot share it",
+                "data": None
+            }
+        
+        # Get original author info
+        original_author = _ops.get_user_by_id(session, original_post.user_id)
+        original_author_username = original_author.username if original_author else "unknown"
+        
+        # Get the sharing user
+        sharing_user = _ops.get_user_by_username(session, agent_username)
+        if not sharing_user:
+            return {
+                "success": False,
+                "message": f"User @{agent_username} not found",
+                "data": None
+            }
+        
+        # Create human-readable share content
+        from datetime import datetime
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+        
+        # Build content with comment if provided
+        if comment and comment.strip():
+            share_content = f"""{comment.strip()}
+
+🔄 Shared Post
+
+Original: "{original_post.title}" by @{original_author_username}
+{original_post.content}
+
+---
+Shared by @{agent_username} at {current_time}"""
+        else:
+            share_content = f"""🔄 Shared Post
+
+Original: "{original_post.title}" by @{original_author_username}
+{original_post.content}
+
+---
+Shared by @{agent_username} at {current_time}"""
+        
+        # Set title: "Shared: {original_post.title}"
+        share_title = f"Shared: {original_post.title}"
+        
+        # Create the shared post
+        shared_post = _ops.create_post(session, sharing_user.id, share_content, title=share_title)
+        
+        return {
+            "success": True,
+            "message": f"Post shared successfully (ID: {shared_post.id})",
+            "data": {
+                "agent_username": agent_username,
+                "shared_post_title": shared_post.title,
+                "created_at": shared_post.created_at.isoformat(),
+                "original_post_title": original_post.title,
+                "original_post_author": original_author_username,
+                "original_post_created_at": original_post.created_at.isoformat()
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to share post: {str(e)}",
+            "data": None
+        }
+
+def _agent_like_comment(
+    session: Session,
+    agent_username: str,
+    post_id: int
+) -> dict:
+    """Like a comment or reply."""
+    try:
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
+        
+        # Validate post exists and is not deleted
+        post = _ops.get_post_by_id(session, post_id)
+        if not post:
+            return {
+                "success": False,
+                "message": f"Comment {post_id} not found",
+                "data": None
+            }
+        
+        if post.deleted_at is not None:
+            return {
+                "success": False,
+                "message": f"Comment {post_id} has been deleted",
+                "data": None
+            }
+        
+        if not post.is_comment:
+            return {
+                "success": False,
+                "message": f"Post {post_id} is not a comment, use like_post instead",
+                "data": None
+            }
+        
+        _ops.create_reaction(session, agent.id, post_id, "like")
+        
+        # Get comment author info
+        author = _ops.get_user_by_id(session, post.user_id)
+        author_username = author.username if author else "unknown"
+        
+        return {
+            "success": True,
+            "message": f"@{agent_username} liked comment by @{author_username}",
+            "data": {
+                "agent_username": agent_username,
+                "comment_content": post.content,
+                "comment_author": author_username
+            }
+        }
+    except _ops.PostNotFoundError:
+        return {
+            "success": False,
+            "message": f"Comment {post_id} not found",
+            "data": None
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to like comment: {str(e)}",
+            "data": None
+        }
+
+def _agent_unlike_comment(
+    session: Session,
+    agent_username: str,
+    post_id: int
+) -> dict:
+    """Remove like from a comment or reply."""
+    try:
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
+        
+        # Validate post exists and is not deleted
+        post = _ops.get_post_by_id(session, post_id)
+        if not post:
+            return {
+                "success": False,
+                "message": f"Comment {post_id} not found",
+                "data": None
+            }
+        
+        if post.deleted_at is not None:
+            return {
+                "success": False,
+                "message": f"Comment {post_id} has been deleted",
+                "data": None
+            }
+        
+        if not post.is_comment:
+            return {
+                "success": False,
+                "message": f"Post {post_id} is not a comment, use unlike_post instead",
+                "data": None
+            }
+        
+        reaction = _ops.soft_delete_reaction(session, agent.id, post_id, "like")
+        
+        if reaction:
+            # Get comment author info
+            author = _ops.get_user_by_id(session, post.user_id)
+            author_username = author.username if author else "unknown"
+            
+            return {
+                "success": True,
+                "message": f"@{agent_username} unliked comment by @{author_username}",
+                "data": {
+                    "agent_username": agent_username,
+                    "comment_content": post.content,
+                    "comment_author": author_username
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"@{agent_username} had not liked comment {post_id}",
+                "data": None
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to unlike comment: {str(e)}",
+            "data": None
+        }
+
+def agent_react_to_post(
+    session: Session,
+    agent_username: str,
+    reaction_type: str,
+    post_id: int,
+    comment: Optional[str] = None
+) -> dict:
+    """Unified post reactions: like, unlike, share."""
+    if reaction_type == "like":
+        return _agent_like_post(session, agent_username, post_id)
+    elif reaction_type == "unlike":
+        return _agent_unlike_post(session, agent_username, post_id)
+    elif reaction_type == "share":
+        if not comment:
+            return {
+                "success": False,
+                "message": f"comment is required for 'share' action",
+                "data": None
+            }
+        return _agent_share_post(session, agent_username, post_id, comment)
+    else:
+        return {
+            "success": False,
+            "message": f"Invalid reaction_type: {reaction_type}. Use 'like', 'unlike', or 'share'",
+            "data": None
+        }
+
+def agent_react_to_response(
+    session: Session,
+    agent_username: str,
+    reaction_type: str,
+    post_id: int
+) -> dict:
+    """Unified comment reactions: like, unlike."""
+    if reaction_type == "like":
+        return _agent_like_comment(session, agent_username, post_id)
+    elif reaction_type == "unlike":
+        return _agent_unlike_comment(session, agent_username, post_id)
+    else:
+        return {
+            "success": False,
+            "message": f"Invalid reaction_type: {reaction_type}. Use 'like' or 'unlike'",
+            "data": None
+        }
+
+# ============================================================================
+# SOCIAL CONNECT
+# ============================================================================
+
+def _agent_get_user_profile(session: Session, agent_username: str, target_username: str) -> dict:
     """Get comprehensive user profile with stats and top posts."""
     # Get target user
     target_user = _ops.get_user_by_username(session, target_username)
@@ -96,7 +898,7 @@ def get_user_profile(session: Session, agent_username: str, target_username: str
         }
     }
 
-def get_user_relationship(session: Session, agent_username: str, target_username: str) -> dict:
+def _agent_get_user_relationship(session: Session, agent_username: str, target_username: str) -> dict:
     """Get detailed relationship information between users."""
     # Get both users
     agent_user = _ops.get_user_by_username(session, agent_username)
@@ -149,7 +951,7 @@ def get_user_relationship(session: Session, agent_username: str, target_username
         }
     }
 
-def get_user_posts(session: Session, agent_username: str, target_username: str) -> dict:
+def _agent_get_user_posts(session: Session, agent_username: str, target_username: str) -> dict:
     """Get recent posts from a user (excluding comments)."""
     # Get target user
     target_user = _ops.get_user_by_username(session, target_username)
@@ -176,229 +978,86 @@ def get_user_posts(session: Session, agent_username: str, target_username: str) 
         }
     }
 
-# ============================================================================
-# CONTENT SERVICES
-# ============================================================================
-
-def create_user_post(
+def _agent_follow_user(
     session: Session,
-    username: str,
-    content: str,
-    title: Optional[str] = None
-) -> dict:
-    """Create a new post for a user."""
-    try:
-        user = _ops.get_user_by_username(session, username)
-        if not user:
-            return {
-                "success": False,
-                "message": f"User @{username} not found",
-                "data": None
-            }
-        
-        post = _ops.create_post(session, user.id, content, title=title)
-        post_data = _format_post_data(session, post)
-        
-        return {
-            "success": True,
-            "message": f"Post created successfully (ID: {post.id})",
-            "data": post_data
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "message": f"Failed to create post: {str(e)}",
-            "data": None
-        }
-
-def create_comment(
-    session: Session,
-    username: str,
-    post_id: int,
-    content: str
-) -> dict:
-    """Create a comment on a post."""
-    try:
-        user = _ops.get_user_by_username(session, username)
-        if not user:
-            return {
-                "success": False,
-                "message": f"User @{username} not found",
-                "data": None
-            }
-        
-        comment = _ops.create_post(session, user.id, content, parent_post_id=post_id)
-        comment_data = _format_post_data(session, comment)
-        
-        return {
-            "success": True,
-            "message": f"Comment created successfully (ID: {comment.id})",
-            "data": comment_data
-        }
-    except _ops.PostNotFoundError:
-        return {
-            "success": False,
-            "message": f"Post {post_id} not found",
-            "data": None
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "message": f"Failed to create comment: {str(e)}",
-            "data": None
-        }
-
-# Import feed algorithm from dedicated module
-from . import feed_algorithm
-
-def get_user_feed(
-    session: Session,
-    username: str,
-    limit: int = 20
-) -> List[dict]:
-    """
-    Get personalized feed for a user.
-    
-    This function delegates to the sophisticated feed algorithm
-    in the dedicated feed_algorithm module.
-    """
-    return feed_algorithm.get_user_feed(session, username, limit)
-
-def get_post_details(session: Session, post_id: int) -> Optional[dict]:
-    """Get detailed information about a specific post."""
-    post = _ops.get_post_by_id(session, post_id)
-    if not post:
-        return None
-    
-    return _format_post_data(session, post)
-
-def get_post_by_title(session: Session, title: str) -> Optional[dict]:
-    """Get detailed information about a specific post by title."""
-    post = _ops.get_post_by_title(session, title)
-    if not post:
-        return None
-    
-    return _format_post_data(session, post)
-
-def get_trending_posts(session: Session, limit: int = 10) -> List[dict]:
-    """Get trending posts."""
-    # For MVP, just get recent posts with highest like counts
-    # TODO: More sophisticated trending algorithm in platform/trending.py
-    
-    from sqlalchemy import func, desc, and_
-    from datetime import timedelta
-    from .models import Post, Reaction
-    
-    # Get posts from last 24 hours with like counts
-    recent_cutoff = datetime.now() - timedelta(days=1)
-    
-    trending_query = session.query(
-        Post,
-        func.count(Reaction.id).label('like_count')
-    ).outerjoin(
-        Reaction,
-        and_(
-            Reaction.post_id == Post.id,
-            Reaction.reaction_type == 'like',
-            Reaction.deleted_at.is_(None)
-        )
-    ).filter(
-        and_(
-            Post.created_at >= recent_cutoff,
-            Post.deleted_at.is_(None),
-            Post.parent_post_id.is_(None)  # Only top-level posts
-        )
-    ).group_by(Post.id).order_by(desc('like_count')).limit(limit)
-    
-    trending_posts = []
-    for post, _ in trending_query.all():
-        post_data = _format_post_data(session, post)
-        trending_posts.append(post_data)
-    
-    return trending_posts
-
-# ============================================================================
-# SOCIAL SERVICES
-# ============================================================================
-
-def follow_user(
-    session: Session,
-    follower_username: str,
-    followed_username: str
+    agent_username: str,
+    target_username: str
 ) -> dict:
     """Create a follow relationship."""
     try:
-        follower = _ops.get_user_by_username(session, follower_username)
-        followed = _ops.get_user_by_username(session, followed_username)
+        agent = _ops.get_user_by_username(session, agent_username)
+        target = _ops.get_user_by_username(session, target_username)
         
-        if not follower:
+        if not agent:
             return {
                 "success": False,
-                "message": f"User @{follower_username} not found",
+                "message": f"Agent @{agent_username} not found",
                 "data": None
             }
         
-        if not followed:
+        if not target:
             return {
                 "success": False,
-                "message": f"User @{followed_username} not found",
+                "message": f"Target user @{target_username} not found",
                 "data": None
             }
         
-        if follower.id == followed.id:
+        if agent.id == target.id:
             return {
                 "success": False,
                 "message": "Cannot follow yourself",
                 "data": None
             }
         
-        _ops.create_relationship(session, follower.id, followed.id, "follow")
-        
-        # Get updated counts
-        following_count = len(_ops.get_following(session, follower.id))
+        _ops.create_relationship(session, agent.id, target.id, "follow")
         
         return {
             "success": True,
-            "message": f"@{follower_username} is now following @{followed_username}",
-            "data": {"following_count": following_count}
+            "message": f"@{agent_username} is now following @{target_username}",
+            "data": {
+                "agent_username": agent_username,
+                "target_username": target_username
+            }
         }
     except _ops.DuplicateError:
         return {
             "success": False,
-            "message": f"@{follower_username} is already following @{followed_username}",
+            "message": f"@{agent_username} is already following @{target_username}",
             "data": None
         }
 
-def unfollow_user(
+def _agent_unfollow_user(
     session: Session,
-    follower_username: str,
-    followed_username: str
+    agent_username: str,
+    target_username: str
 ) -> dict:
     """Remove a follow relationship."""
     try:
-        follower = _ops.get_user_by_username(session, follower_username)
-        followed = _ops.get_user_by_username(session, followed_username)
+        agent = _ops.get_user_by_username(session, agent_username)
+        target = _ops.get_user_by_username(session, target_username)
         
-        if not follower or not followed:
+        if not agent or not target:
             return {
                 "success": False,
                 "message": "One or both users not found",
                 "data": None
             }
         
-        relationship = _ops.soft_delete_relationship(session, follower.id, followed.id, "follow")
+        relationship = _ops.soft_delete_relationship(session, agent.id, target.id, "follow")
         
         if relationship:
-            following_count = len(_ops.get_following(session, follower.id))
             return {
                 "success": True,
-                "message": f"@{follower_username} unfollowed @{followed_username}",
-                "data": {"following_count": following_count}
+                "message": f"@{agent_username} unfollowed @{target_username}",
+                "data": {
+                    "agent_username": agent_username,
+                    "target_username": target_username
+                }
             }
         else:
             return {
                 "success": False,
-                "message": f"@{follower_username} was not following @{followed_username}",
+                "message": f"@{agent_username} was not following @{target_username}",
                 "data": None
             }
     except Exception as e:
@@ -408,132 +1067,583 @@ def unfollow_user(
             "data": None
         }
 
-def like_post(
+def _agent_create_community(
     session: Session,
-    username: str,
-    post_id: int
+    agent_username: str,
+    name: str,
+    description: str
 ) -> dict:
-    """Like a post."""
+    """Create a new community."""
     try:
-        user = _ops.get_user_by_username(session, username)
-        if not user:
+        # Validate inputs
+        if not name or not name.strip():
             return {
                 "success": False,
-                "message": f"User @{username} not found",
+                "message": "Community name cannot be empty",
                 "data": None
             }
         
-        _ops.create_reaction(session, user.id, post_id, "like")
+        if not description or not description.strip():
+            return {
+                "success": False,
+                "message": "Community description cannot be empty",
+                "data": None
+            }
         
-        # Get updated reaction counts
-        reaction_counts = _ops.get_reaction_counts(session, post_id)
+        # Check if community name already exists
+        existing_community = _ops.get_community_by_name(session, name)
+        if existing_community:
+            return {
+                "success": False,
+                "message": f"Community '{name}' already exists",
+                "data": None
+            }
+        
+        # Get agent
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
+        
+        # Create community
+        community = _ops.create_community(session, name, agent.id, description)
+        
+        # Auto-join creator as admin
+        _ops.create_membership(session, agent.id, community.id, "creator")
         
         return {
             "success": True,
-            "message": f"@{username} liked post {post_id}",
-            "data": {"reaction_counts": reaction_counts}
-        }
-    except _ops.PostNotFoundError:
-        return {
-            "success": False,
-            "message": f"Post {post_id} not found",
-            "data": None
+            "message": f"@{agent_username} created community '{name}'",
+            "data": {
+                "agent_username": agent_username,
+                "community_name": name,
+                "description": description,
+                "created_at": community.created_at.isoformat()
+            }
         }
     except Exception as e:
         return {
             "success": False,
-            "message": f"Failed to like post: {str(e)}",
+            "message": f"Failed to create community: {str(e)}",
             "data": None
         }
 
-def unlike_post(
+def _agent_join_community(
     session: Session,
-    username: str,
-    post_id: int
+    agent_username: str,
+    community_name: str
 ) -> dict:
-    """Remove like from a post."""
+    """Join a community."""
     try:
-        user = _ops.get_user_by_username(session, username)
-        if not user:
+        # Get agent
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
             return {
                 "success": False,
-                "message": f"User @{username} not found",
+                "message": f"Agent @{agent_username} not found",
                 "data": None
             }
         
-        reaction = _ops.soft_delete_reaction(session, user.id, post_id, "like")
-        
-        if reaction:
-            reaction_counts = _ops.get_reaction_counts(session, post_id)
-            return {
-                "success": True,
-                "message": f"@{username} unliked post {post_id}",
-                "data": {"reaction_counts": reaction_counts}
-            }
-        else:
+        # Get community
+        community = _ops.get_community_by_name(session, community_name)
+        if not community:
             return {
                 "success": False,
-                "message": f"@{username} had not liked post {post_id}",
+                "message": f"Community '{community_name}' not found",
                 "data": None
             }
+        
+        if community.deleted_at is not None:
+            return {
+                "success": False,
+                "message": f"Community '{community_name}' has been deleted",
+                "data": None
+            }
+        
+        # Check if already a member
+        existing_membership = _ops.get_membership(session, agent.id, community.id)
+        if existing_membership:
+            return {
+                "success": False,
+                "message": f"@{agent_username} is already a member of '{community_name}'",
+                "data": None
+            }
+        
+        # Join community
+        _ops.create_membership(session, agent.id, community.id, "member")
+        
+        return {
+            "success": True,
+            "message": f"@{agent_username} joined community '{community_name}'",
+            "data": {
+                "agent_username": agent_username,
+                "community_name": community_name
+            }
+        }
     except Exception as e:
         return {
             "success": False,
-            "message": f"Failed to unlike post: {str(e)}",
+            "message": f"Failed to join community: {str(e)}",
+            "data": None
+        }
+
+def _agent_leave_community(
+    session: Session,
+    agent_username: str,
+    community_name: str
+) -> dict:
+    """Leave a community."""
+    try:
+        # Get agent
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
+        
+        # Get community
+        community = _ops.get_community_by_name(session, community_name)
+        if not community:
+            return {
+                "success": False,
+                "message": f"Community '{community_name}' not found",
+                "data": None
+            }
+        
+        if community.deleted_at is not None:
+            return {
+                "success": False,
+                "message": f"Community '{community_name}' has been deleted",
+                "data": None
+            }
+        
+        # Check if creator (cannot leave own community)
+        if community.created_by == agent.id:
+            return {
+                "success": False,
+                "message": f"@{agent_username} is the creator of '{community_name}' and cannot leave",
+                "data": None
+            }
+        
+        # Check membership
+        membership = _ops.get_membership(session, agent.id, community.id)
+        if not membership:
+            return {
+                "success": False,
+                "message": f"@{agent_username} is not a member of '{community_name}'",
+                "data": None
+            }
+        
+        # Leave community (soft delete membership)
+        from datetime import datetime, timezone
+        membership.deleted_at = datetime.now(timezone.utc)
+        session.flush()
+        
+        return {
+            "success": True,
+            "message": f"@{agent_username} left community '{community_name}'",
+            "data": {
+                "agent_username": agent_username,
+                "community_name": community_name
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to leave community: {str(e)}",
+            "data": None
+        }
+
+def _agent_get_community_infos(
+    session: Session,
+    agent_username: str,
+    community_name: str
+) -> dict:
+    """Get community information with top members."""
+    try:
+        # Get agent
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
+        
+        # Get community
+        community = _ops.get_community_by_name(session, community_name)
+        if not community:
+            return {
+                "success": False,
+                "message": f"Community '{community_name}' not found",
+                "data": None
+            }
+        
+        if community.deleted_at is not None:
+            return {
+                "success": False,
+                "message": f"Community '{community_name}' has been deleted",
+                "data": None
+            }
+        
+        # Get creator info
+        creator = _ops.get_user_by_id(session, community.created_by)
+        creator_username = creator.username if creator else "unknown"
+        
+        # Get all members
+        members = _ops.get_community_members(session, community.id)
+        
+        # Get top 4 members (excluding creator, sorted by join date)
+        top_members = []
+        for member in members[:4]:  # First 4 members
+            if member.id != community.created_by:  # Exclude creator
+                top_members.append({
+                    "username": member.username,
+                    "bio": member.bio or ""
+                })
+        
+        return {
+            "success": True,
+            "message": f"Retrieved info for community '{community_name}'",
+            "data": {
+                "agent_username": agent_username,
+                "community_name": community.name,
+                "description": community.description or "",
+                "creator": creator_username,
+                "top_members": top_members
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to get community info: {str(e)}",
+            "data": None
+        }
+
+def _agent_get_community_members(
+    session: Session,
+    agent_username: str,
+    community_name: str
+) -> dict:
+    """Get all community members."""
+    try:
+        # Get agent
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
+        
+        # Get community
+        community = _ops.get_community_by_name(session, community_name)
+        if not community:
+            return {
+                "success": False,
+                "message": f"Community '{community_name}' not found",
+                "data": None
+            }
+        
+        if community.deleted_at is not None:
+            return {
+                "success": False,
+                "message": f"Community '{community_name}' has been deleted",
+                "data": None
+            }
+        
+        # Get creator info
+        creator = _ops.get_user_by_id(session, community.created_by)
+        creator_username = creator.username if creator else "unknown"
+        
+        # Get all members
+        members = _ops.get_community_members(session, community.id)
+        
+        # Format member list
+        member_list = []
+        for member in members:
+            member_list.append({
+                "username": member.username,
+                "bio": member.bio or ""
+            })
+        
+        return {
+            "success": True,
+            "message": f"Retrieved members for community '{community_name}'",
+            "data": {
+                "agent_username": agent_username,
+                "community_name": community.name,
+                "creator": creator_username,
+                "members": member_list
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to get community members: {str(e)}",
+            "data": None
+        }
+
+def agent_connect_with_user(
+    session: Session,
+    agent_username: str,
+    action_type: str,
+    target_username: str
+) -> dict:
+    """Unified user operations: get_profile, get_relationship, get_posts, follow, unfollow."""
+    if not target_username and action_type in ["get_profile", "get_relationship", "get_posts", "follow", "unfollow"]:
+        return {
+            "success": False,
+            "message": f"target_username is required for action_type '{action_type}'",
+            "data": None
+        }
+    
+    if action_type == "get_profile":
+        return _agent_get_user_profile(session, agent_username, target_username)
+    elif action_type == "get_relationship":
+        return _agent_get_user_relationship(session, agent_username, target_username)
+    elif action_type == "get_posts":
+        return _agent_get_user_posts(session, agent_username, target_username)
+    elif action_type == "follow":
+        return _agent_follow_user(session, agent_username, target_username)
+    elif action_type == "unfollow":
+        return _agent_unfollow_user(session, agent_username, target_username)
+    else:
+        return {
+            "success": False,
+            "message": f"Invalid action_type: {action_type}. Use 'profile', 'relationship', 'posts', 'follow', or 'unfollow'",
+            "data": None
+        }
+
+def agent_manage_community(
+    session: Session,
+    agent_username: str,
+    action_type: str,
+    community_name: str,
+    description: Optional[str] = None
+) -> dict:
+    """Unified community operations: create, join, leave, get_info, get_members."""
+    if action_type == "create":
+        if not community_name or not description:
+            return {
+                "success": False,
+                "message": "community_name and description are required for 'create' action",
+                "data": None
+            }
+        return _agent_create_community(session, agent_username, community_name, description)
+    elif action_type in ["join", "leave", "get_info", "get_members"]:
+        if not community_name:
+            return {
+                "success": False,
+                "message": f"community_name is required for action_type '{action_type}'",
+                "data": None
+            }
+        
+        if action_type == "join":
+            return _agent_join_community(session, agent_username, community_name)
+        elif action_type == "leave":
+            return _agent_leave_community(session, agent_username, community_name)
+        elif action_type == "get_info":
+            return _agent_get_community_infos(session, agent_username, community_name)
+        elif action_type == "get_members":
+            return _agent_get_community_members(session, agent_username, community_name)
+    else:
+        return {
+            "success": False,
+            "message": f"Invalid action_type: {action_type}. Use 'create', 'join', 'leave', 'info', or 'members'",
             "data": None
         }
 
 # ============================================================================
-# UTILITY FUNCTIONS
+# CONTENT DISCOVERY
 # ============================================================================
 
-def _format_post_data(session: Session, post) -> dict:
-    """Convert database Post object to dict format."""
-    # Get author info
-    author = _ops.get_user_by_id(session, post.user_id)
+def _agent_get_feed(
+    session: Session,
+    agent_username: str,
+    limit: int = 20
+) -> dict:
+    """
+    Get personalized feed for an agent.
     
-    # Get comment count
-    comments = _ops.get_comments_for_post(session, post.id)
-    
-    # Get reaction counts
-    reaction_counts = _ops.get_reaction_counts(session, post.id)
-    
-    return {
-        "id": post.id,
-        "title": post.title,
-        "author_username": author.username if author else "unknown",
-        "content": post.content,
-        "created_at": post.created_at.isoformat(),
-        "is_comment": post.is_comment,
-        "parent_post_id": post.parent_post_id,
-        "comment_count": len(comments),
-        "reaction_counts": reaction_counts
-    }
+    Simple MVP feed: posts from followed users + own posts + community posts,
+    sorted by creation time (newest first).
+    """
+    try:
+        # Get agent
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
+        
+        # Get users this agent follows
+        following = _ops.get_following(session, agent.id)
+        following_ids = [u.id for u in following]
+        
+        # Include agent's own posts
+        following_ids.append(agent.id)
+        
+        # Get communities agent is member of
+        agent_communities = _ops.get_user_communities(session, agent.id)
+        community_ids = [c.id for c in agent_communities]
+        
+        # Get posts from followed users (excluding comments)
+        feed_posts = []
+        for user_id in following_ids:
+            user_posts = _ops.get_posts_by_user(session, user_id, limit=50, include_comments=False)
+            feed_posts.extend(user_posts)
+        
+        # Get posts from agent's communities (excluding comments)
+        for community_id in community_ids:
+            community_members = _ops.get_community_members(session, community_id)
+            for member in community_members:
+                member_posts = _ops.get_posts_by_user(session, member.id, limit=10, include_comments=False)
+                feed_posts.extend(member_posts)
+        
+        # Remove duplicates and sort by creation time (newest first)
+        seen_posts = set()
+        unique_posts = []
+        for post in feed_posts:
+            if post.id not in seen_posts:
+                seen_posts.add(post.id)
+                unique_posts.append(post)
+        
+        unique_posts.sort(key=lambda p: p.created_at, reverse=True)
+        
+        # Format posts for feed
+        feed_items = []
+        for post in unique_posts[:limit]:
+            author = _ops.get_user_by_id(session, post.user_id)
+            reaction_counts = _ops.get_reaction_counts(session, post.id)
+            comments = _ops.get_comments_for_post(session, post.id)
+            
+            feed_items.append({
+                "id": post.id,
+                "title": post.title,
+                "author_username": author.username if author else "unknown",
+                "content": post.content,
+                "created_at": post.created_at.isoformat(),
+                "like_count": reaction_counts.get("like", 0),
+                "comment_count": len(comments)
+            })
+        
+        return {
+            "success": True,
+            "message": f"Retrieved feed for @{agent_username}",
+            "data": {
+                "agent_username": agent_username,
+                "feed_items": feed_items
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to get feed: {str(e)}",
+            "data": None
+        }
 
-if __name__ == "__main__":
-    # Quick test of services
-    from .connection import initialize_database
+def _agent_get_trending(
+    session: Session,
+    agent_username: str,
+    limit: int = 10
+) -> dict:
+    """
+    Get trending posts globally.
     
-    print("Testing services...")
-    db = initialize_database("test_services.db")
-    
-    with db.get_session() as session:
-        # Test user creation
-        result = create_user_account(session, "alice", "Alice Smith")
-        print(f"Create user: {result['message']}")
+    Simple MVP trending: posts from last 7 days with most likes,
+    sorted by like count (highest first).
+    """
+    try:
+        # Get agent
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
         
-        # Test posting
-        result = create_user_post(session, "alice", "Hello, world! This is my first post.")
-        print(f"Create post: {result['message']}")
+        from sqlalchemy import func, desc, and_
+        from datetime import timedelta
+        from .models import Post, Reaction
         
-        # Test user profile
-        profile = get_user_profile(session, "alice")
-        print(f"User profile: @{profile['username']} has {profile['post_count']} posts")
-    
-    db.close()
-    
-    # Clean up
-    from pathlib import Path
-    Path("test_services.db").unlink(missing_ok=True)
-    
-    print("Services test completed!")
+        # Get posts from last 7 days with like counts
+        recent_cutoff = datetime.now() - timedelta(days=7)
+        
+        trending_query = session.query(
+            Post,
+            func.count(Reaction.id).label('like_count')
+        ).outerjoin(
+            Reaction,
+            and_(
+                Reaction.post_id == Post.id,
+                Reaction.reaction_type == 'like',
+                Reaction.deleted_at.is_(None)
+            )
+        ).filter(
+            and_(
+                Post.created_at >= recent_cutoff,
+                Post.deleted_at.is_(None),
+                Post.parent_post_id.is_(None)  # Only top-level posts
+            )
+        ).group_by(Post.id).order_by(desc('like_count')).limit(limit)
+        
+        trending_posts = []
+        for post, like_count in trending_query.all():
+            # Get author info
+            author = _ops.get_user_by_id(session, post.user_id)
+            
+            # Get comment count
+            comments = _ops.get_comments_for_post(session, post.id)
+            
+            trending_posts.append({
+                "id": post.id,
+                "title": post.title,
+                "author_username": author.username if author else "unknown",
+                "content": post.content,
+                "created_at": post.created_at.isoformat(),
+                "like_count": like_count,
+                "comment_count": len(comments)
+            })
+        
+        return {
+            "success": True,
+            "message": f"Retrieved trending posts for @{agent_username}",
+            "data": {
+                "agent_username": agent_username,
+                "trending_posts": trending_posts
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to get trending posts: {str(e)}",
+            "data": None
+        }
+
+def agent_get_discovery(
+    session: Session,
+    agent_username: str,
+    discovery_type: str,
+    limit: int = 20
+) -> dict:
+    """Unified content discovery: feed, trending."""
+    if discovery_type == "feed":
+        return _agent_get_feed(session, agent_username, limit)
+    elif discovery_type == "trending":
+        return _agent_get_trending(session, agent_username, limit)
+    else:
+        return {
+            "success": False,
+            "message": f"Invalid discovery_type: {discovery_type}. Use 'feed' or 'trending'",
+            "data": None
+        }
+

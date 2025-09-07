@@ -92,7 +92,7 @@ synthetic-agora/
 
 **Status**: Fully implemented and tested (1,776 total lines)
 
-### 2. Runtime Layer (`agora/runtime/`) - ✅ COMPLETE
+### 2. Runtime Layer (`agora/runtime/`) - Implementing
 
 **Purpose**: Bridges semantic agent tool calls with platform services through sophisticated execution and context management.
 
@@ -133,21 +133,7 @@ synthetic-agora/
 
 **Status**: Fully implemented and tested (826 total lines)
 
-### 3. Agents Layer (`agora/agents/`) - 🚧 PLANNED
-
-**Purpose**: Defines static agent templates and baseline characteristics.
-
-**Planned Features**:
-
-- **personalities.py**: Static agent templates (political orientations, demographics)
-- **belief_systems.py**: Baseline belief models and cognitive biases
-- **interaction_patterns.py**: Social behavior strategies and templates
-
-**Dependencies**: None (pure definitions, no runtime state)
-
-**Status**: Empty directory, planning phase
-
-### 4. Analysis Layer (`agora/analysis/`) - 🚧 PLANNED
+### 3. Analysis Layer (`agora/analysis/`) - 🚧 PLANNED
 
 **Purpose**: Comprehensive analysis and visualization of simulation evolution.
 
@@ -183,8 +169,7 @@ synthetic-agora/
 ### Development Status
 
 - **Platform layer**: 100% complete (1,776 lines) ✅
-- **Runtime layer**: 100% complete (826 lines) ✅  
-- **Agents layer**: 0% complete (planning phase) 🚧
+- **Runtime layer**: 25% complete (implementing...)
 - **Analysis layer**: 0% complete (planning phase) 🚧
 
 ## Next Development Steps
