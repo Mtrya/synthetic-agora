@@ -596,3 +596,25 @@ def get_community_members(session: Session, community_id: int) -> List[User]:
             User.deleted_at.is_(None)
         )
     ).all()
+
+# =================================================================
+# SEARCH OPERATIONS
+# =================================================================
+
+def get_all_posts(session: Session) -> List[Post]:
+    """Get all non-deleted posts."""
+    return session.query(Post).filter(
+        Post.deleted_at.is_(None)
+    ).all()
+
+def get_all_users(session: Session) -> List[User]:
+    """Get all non-deleted users."""
+    return session.query(User).filter(
+        User.deleted_at.is_(None)
+    ).all()
+
+def get_all_communities(session: Session) -> List[Community]:
+    """Get all non-deleted communities."""
+    return session.query(Community).filter(
+        Community.deleted_at.is_(None)
+    ).all()

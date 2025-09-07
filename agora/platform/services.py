@@ -1647,3 +1647,109 @@ def agent_get_discovery(
             "data": None
         }
 
+def agent_search(
+    session: Session,
+    agent_username: str,
+    query: str,
+    search_type: str = "all"
+) -> dict:
+    """Simple case-insensitive search across all content types.
+    
+    search_type: "all", "posts", "users", "communities"
+    """
+    try:
+        # Validate inputs
+        if not query or not query.strip():
+            return {
+                "success": False,
+                "message": "Search query cannot be empty",
+                "data": None
+            }
+        
+        # Validate agent exists
+        agent = _ops.get_user_by_username(session, agent_username)
+        if not agent:
+            return {
+                "success": False,
+                "message": f"Agent @{agent_username} not found",
+                "data": None
+            }
+        
+        query_lower = query.lower().strip()
+        results = {"posts": [], "users": [], "communities": []}
+        
+        # Search posts
+        if search_type in ["all", "posts"]:
+            all_posts = _ops.get_all_posts(session)
+            matching_posts = []
+            for post in all_posts:
+                # Check title and content (case-insensitive)
+                title_match = post.title and query_lower in post.title.lower()
+                content_match = query_lower in post.content.lower()
+                
+                if title_match or content_match:
+                    author = _ops.get_user_by_id(session, post.user_id)
+                    matching_posts.append({
+                        "id": post.id,
+                        "title": post.title,
+                        "author_username": author.username if author else "unknown",
+                        "created_at": post.created_at.isoformat()
+                    })
+            
+            results["posts"] = matching_posts[:10]  # Limit to 10 results
+        
+        # Search users
+        if search_type in ["all", "users"]:
+            all_users = _ops.get_all_users(session)
+            matching_users = []
+            for user in all_users:
+                # Check username (case-insensitive)
+                if query_lower in user.username.lower():
+                    matching_users.append({
+                        "id": user.id,
+                        "username": user.username,
+                        "bio": user.bio
+                    })
+            
+            results["users"] = matching_users[:10]  # Limit to 10 results
+        
+        # Search communities
+        if search_type in ["all", "communities"]:
+            all_communities = _ops.get_all_communities(session)
+            matching_communities = []
+            for community in all_communities:
+                # Check name and description (case-insensitive)
+                name_match = query_lower in community.name.lower()
+                description_match = community.description and query_lower in community.description.lower()
+                
+                if name_match or description_match:
+                    creator = _ops.get_user_by_id(session, community.created_by)
+                    matching_communities.append({
+                        "id": community.id,
+                        "name": community.name,
+                        "description": community.description,
+                        "created_by": creator.username if creator else "unknown"
+                    })
+            
+            results["communities"] = matching_communities[:10]  # Limit to 10 results
+        
+        # Count total results
+        total_results = len(results["posts"]) + len(results["users"]) + len(results["communities"])
+        
+        return {
+            "success": True,
+            "message": f"Found {total_results} results for '{query}'",
+            "data": {
+                "query": query,
+                "search_type": search_type,
+                "results": results
+            }
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Search failed: {str(e)}",
+            "data": None
+        }
+

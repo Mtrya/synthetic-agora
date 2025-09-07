@@ -189,7 +189,15 @@ class AgentToolExecutor:
         """
         service_args = {}
         
+        # Always include agent_username if it's a context parameter
+        if "agent_username" in tool_def.context_params:
+            service_args["agent_username"] = agent_username
+        
         for service_arg, mapping_source in tool_def.arguments_mapping.items():
+            # Skip agent_username since we already handled it
+            if service_arg == "agent_username":
+                continue
+                
             # Check if mapping source is in tool parameters
             if mapping_source in tool_parameters:
                 service_args[service_arg] = tool_parameters[mapping_source]
@@ -208,6 +216,11 @@ class AgentToolExecutor:
             # Direct mapping (same name)
             elif mapping_source == service_arg and mapping_source in tool_parameters:
                 service_args[service_arg] = tool_parameters[mapping_source]
+            
+            # Handle optional parameters that aren't provided
+            elif mapping_source == service_arg and mapping_source not in tool_parameters:
+                # Skip optional parameters
+                continue
             
             else:
                 raise ValueError(f"Cannot map service argument '{service_arg}' from source '{mapping_source}'")

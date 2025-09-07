@@ -24,6 +24,7 @@ from agora.platform.services import (
     
     # UNIFIED DISCOVERY SERVICES  
     agent_get_discovery,
+    agent_search,
     
     # UNIFIED SOCIAL SERVICES
     agent_connect_with_user,
@@ -189,6 +190,35 @@ def test_algorithm_services(session, _users):
     else:
         print(f"  ❌ | agent_get_discovery(alice, trending) failed: {result['message']}")
 
+def test_search_services(session, users):
+    """Test SEARCH SERVICES"""
+    print_test_header("SEARCH SERVICES")
+    
+    # Test general search
+    print("\n1. Testing general search...")
+    result = agent_search(session, "alice", "machine learning")
+    print_result("agent_search(alice, 'machine learning')", result)
+    
+    # Test case-insensitive search
+    print("\n2. Testing case-insensitive search...")
+    result2 = agent_search(session, "alice", "MACHINE LEARNING")
+    print_result("agent_search(alice, 'MACHINE LEARNING')", result2)
+    
+    # Test user-specific search
+    print("\n3. Testing user search...")
+    result3 = agent_search(session, "alice", "alice", "users")
+    print_result("agent_search(alice, 'alice', 'users')", result3)
+    
+    # Test post-specific search
+    print("\n4. Testing post search...")
+    result4 = agent_search(session, "alice", "introduction", "posts")
+    print_result("agent_search(alice, 'introduction', 'posts')", result4)
+    
+    # Test empty search (should fail)
+    print("\n5. Testing empty search...")
+    result5 = agent_search(session, "alice", "tech")
+    print_result("agent_search(alice, 'tech')", result5)
+
 def test_social_services(session, _users):
     """Test SOCIAL SERVICES"""
     print_test_header("SOCIAL SERVICES")
@@ -272,6 +302,7 @@ def main():
             users = test_user_services(session)
             posts = test_content_services(session, users)
             test_algorithm_services(session, users)
+            test_search_services(session, users)
             test_social_services(session, users)
             
             print(f"\n{'='*60}")
@@ -280,7 +311,7 @@ def main():
             print(f"📊 Summary:")
             print(f"   Users created: {len(users)}")
             print(f"   Posts created: {len(posts)}")
-            print(f"   Services tested: 4 categories")
+            print(f"   Services tested: 5 categories")
             print(f"   Database: {test_db_path}")
             
     except Exception as e:
